@@ -202,26 +202,87 @@
   1. Namespace & Global State
   Paste this first.
 =================================================== */
+<script>
+/* --- Namespacing / compatibility patch: merge globals into NS --- */
 window.AdhyPatch = window.AdhyPatch || {};
 const NS = window.AdhyPatch;
 
-NS.CURRENT_DOC = null;
-NS.CURRENT_HTML = '';
-NS.CURRENT_LOCATORS = [];
-NS.CURRENT_IFRAME_PATH = [];
-NS.CURRENT_FRAME_CONTEXT = null;
-NS.MODE = 'generic'; // 'generic' | 'salesforce' | 'pega'
-NS.POM_CACHE = { pom: '', steps: '' };
-NS.LOGS = [];
-NS.CUSTOM_LOCATORS = [];
+// --- helpers (DOM query)
+NS.$ = NS.$ || (s => document.querySelector(s));
+NS.$$ = NS.$$ || (s => Array.from(document.querySelectorAll(s)));
 
-function logEvent(msg){
-  NS.LOGS.push({time:Date.now(), msg});
-  console.log("[Adhyan]", msg);
+// --- UI element references (fill these once DOM exists)
+// If your script runs before DOM, these will be null; keep that in mind.
+NS.preview = NS.preview || NS.$('#preview');
+NS.locList = NS.locList || NS.$('#locList');
+NS.output = NS.output || NS.$('#output');
+NS.pasteBox = NS.pasteBox || NS.$('#pasteBox');
+NS.toast = NS.toast || NS.$('#toast');
+NS.hiddenFile = NS.hiddenFile || NS.$('#hiddenFile');
+
+// --- persistent state (keeps existing values if already set)
+NS.CURRENT_DOC = (typeof NS.CURRENT_DOC !== 'undefined') ? NS.CURRENT_DOC : null;
+NS.CURRENT_HTML = (typeof NS.CURRENT_HTML !== 'undefined') ? NS.CURRENT_HTML : '';
+NS.CURRENT_LOCATORS = (typeof NS.CURRENT_LOCATORS !== 'undefined') ? NS.CURRENT_LOCATORS : [];
+NS.CURRENT_IFRAME_PATH = (typeof NS.CURRENT_IFRAME_PATH !== 'undefined') ? NS.CURRENT_IFRAME_PATH : null;
+NS.CURRENT_FRAME_CONTEXT = (typeof NS.CURRENT_FRAME_CONTEXT !== 'undefined') ? NS.CURRENT_FRAME_CONTEXT : null;
+NS.MODE = (typeof NS.MODE !== 'undefined') ? NS.MODE : 'generic'; // 'generic' | 'salesforce' | 'pega'
+NS.POM_CACHE = (typeof NS.POM_CACHE !== 'undefined') ? NS.POM_CACHE : { pom: '', steps: '' };
+NS.LOGS = (typeof NS.LOGS !== 'undefined') ? NS.LOGS : [];
+NS.CUSTOM_LOCATORS = (typeof NS.CUSTOM_LOCATORS !== 'undefined') ? NS.CUSTOM_LOCATORS : [];
+
+// --- Also expose the common names as globals for backward compatibility
+// (these are references; updating NS.* updates these values)
+const $ = NS.$;
+const $$ = NS.$$;
+
+// UI element globals so old code doesn't break
+const preview = NS.preview;
+const locList = NS.locList;
+const output = NS.output;
+const pasteBox = NS.pasteBox;
+const toast = NS.toast;
+const hiddenFile = NS.hiddenFile;
+
+// Backward-compatible simple copies of state (references)
+let CURRENT_DOC = NS.CURRENT_DOC;
+let CURRENT_HTML = NS.CURRENT_HTML;
+let CURRENT_LOCATORS = NS.CURRENT_LOCATORS;
+let CURRENT_IFRAME_PATH = NS.CURRENT_IFRAME_PATH;
+let CURRENT_FRAME_CONTEXT = NS.CURRENT_FRAME_CONTEXT;
+let MODE = NS.MODE;
+let POM_CACHE = NS.POM_CACHE;
+
+// Also keep a small sync helper to persist changes back into NS
+function syncToNS(){
+  NS.CURRENT_DOC = CURRENT_DOC;
+  NS.CURRENT_HTML = CURRENT_HTML;
+  NS.CURRENT_LOCATORS = CURRENT_LOCATORS;
+  NS.CURRENT_IFRAME_PATH = CURRENT_IFRAME_PATH;
+  NS.CURRENT_FRAME_CONTEXT = CURRENT_FRAME_CONTEXT;
+  NS.MODE = MODE;
+  NS.POM_CACHE = POM_CACHE;
 }
-function dbg(msg, e){
-  try { logEvent(msg + (e ? (": " + (e.message||e)) : "")); } catch(err){}
+
+// And a helper to refresh local copies from NS (if something else changed NS)
+function syncFromNS(){
+  CURRENT_DOC = NS.CURRENT_DOC;
+  CURRENT_HTML = NS.CURRENT_HTML;
+  CURRENT_LOCATORS = NS.CURRENT_LOCATORS;
+  CURRENT_IFRAME_PATH = NS.CURRENT_IFRAME_PATH;
+  CURRENT_FRAME_CONTEXT = NS.CURRENT_FRAME_CONTEXT;
+  MODE = NS.MODE;
+  POM_CACHE = NS.POM_CACHE;
 }
+
+/* Optional: automatically sync before unload (not required)
+window.addEventListener('beforeunload', () => { syncToNS(); });
+*/
+
+// If you prefer all code to use NS directly, you can replace usage of the top-level
+// variables with NS.CURRENT_HTML etc. This compatibility layer ensures your current
+// codebase keeps running while you refactor incrementally.
+</script>
   
   /* ===================================================
   2. Utilities
