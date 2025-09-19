@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Offline XPath Locator & POM + API Studio</title>
+<style>
+  :root{
+    --bg:#0f1217; --panel:#151a21; --panel2:#171e27; --chip:#202734;
+    --txt:#e9eef5; --dim:#9db0c5; --brd:#273243;
+    --accent:#7c5cff; --ok:#19c37d; --warn:#ffbf47; --bad:#ff4d4f;
+    --ed-bg:#fbfcfe; --ed-brd:#dfe6ee; --ed-txt:#0f172a;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
+  .app{display:grid;grid-template-columns:280px 1fr;height:100%}
+  /* Sidebar */
+  .side{background:linear-gradient(180deg,#0f1217 0,#0f1217 60%,#0e1117 100%);border-right:1px solid var(--brd);padding:18px 16px;overflow:auto}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;margin-bottom:14px}
+  .beacon{width:10px;height:10px;border-radius:50%;background:linear-gradient(180deg,var(--accent),#563bff);box-shadow:0 0 10px var(--accent)}
+  .section{margin:16px 0 8px;color:var(--dim);font-size:12px;letter-spacing:.12em;text-transform:uppercase}
+  .btn{width:100%;text-align:left;cursor:pointer;background:var(--panel);border:1px solid var(--brd);border-radius:12px;padding:10px 12px;color:var(--txt);font-weight:600;margin-bottom:8px;transition:.15s}
+  .btn:hover{background:var(--panel2);transform:translateY(-1px)}
+  .btn.primary{background:linear-gradient(180deg,var(--accent),#6047ff);border-color:#5b49f2}
+  .btn.danger{background:linear-gradient(180deg,#ff4d4f,#e13b3e);border-color:#e13b3e}
+  .pill{display:flex;gap:8px;align-items:center;background:var(--panel2);border:1px solid var(--brd);border-radius:999px;padding:8px 10px;width:max-content;color:var(--dim);font-size:12px}
+  .switch{display:flex;gap:8px}
+  .switch .sw{padding:8px 12px;border:1px solid var(--brd);border-radius:10px;background:var(--panel);cursor:pointer}
+  .sw.active{outline:2px solid rgba(124,92,255,.35)}
+  /* Main */
+  .main{display:grid;grid-template-rows:auto 1fr auto}
+  .toolbar{display:flex;gap:10px;align-items:center;padding:12px;border-bottom:1px solid var(--brd);background:var(--panel);position:sticky;top:0;z-index:5}
+  .toolbar .title{font-weight:800}
+  .hint{color:var(--dim);font-size:12px;margin-left:auto}
+  .mode-chips{display:flex;gap:8px}
+  .mode-chip{padding:6px 10px;border-radius:8px;background:#0f1420;border:1px solid var(--brd);cursor:pointer;color:var(--dim);font-weight:700}
+  .mode-chip.active{background:linear-gradient(90deg,var(--accent),#5a48f0);color:#fff;box-shadow:0 6px 18px rgba(90,72,240,.12)}
+  .workspace{display:grid;grid-template-columns:48% 52%;gap:14px;padding:14px;overflow:auto}
+  .card{background:var(--panel);border:1px solid var(--brd);border-radius:14px;display:flex;min-height:60px;flex-direction:column;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .card .head{background:var(--panel2);padding:12px 14px;border-bottom:1px solid var(--brd);display:flex;align-items:center;gap:10px;font-weight:700}
+  .card .body{padding:12px;display:flex;flex-direction:column;gap:10px;min-height:140px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  select,input[type="text"]{background:var(--panel2);border:1px solid var(--brd);border-radius:10px;color:var(--txt);padding:8px 10px}
+  textarea.ed{background:var(--ed-bg);border:1px solid var(--ed-brd);border-radius:12px;color:var(--ed-txt);padding:10px;font-size:13px;min-height:130px;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .list{display:flex;flex-direction:column;gap:8px}
+  .loc-row{display:flex;gap:10px;align-items:center;justify-content:space-between;background:#0f1420;border:1px solid var(--brd);border-radius:12px;padding:8px 10px}
+  .loc-row .badge{background:#0b1020;border:1px solid #232c3d;border-radius:999px;padding:4px 8px;color:#9db0c5;font-size:12px}
+  .loc-row .act{display:flex;gap:8px}
+  iframe.preview{width:100%;min-height:360px;border:1px dashed #3a475a;border-radius:12px;background:#0d111a}
+  .toast{position:fixed;bottom:16px;left:16px;background:#162033;border:1px solid #223148;border-radius:10px;padding:10px 12px;color:#b8c7da;opacity:0;transform:translateY(6px);transition:.2s}
+  .toast.show{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="side">
+    <div class="brand"><span class="beacon"></span> Offline XPath Studio</div>
+
+    <div class="section">Workspace</div>
+    <button id="btnPaste" class="btn">Paste HTML</button>
+    <button id="btnOpenFile" class="btn">Open .html file</button>
+    <div class="pill">Drag & drop file into preview</div>
+    <button id="btnClear" class="btn danger">Clear</button>
+    <button id="btnExport" class="btn">Export (locators + checks)</button>
+
+    <div class="section">Locator Panels</div>
+    <button class="btn" data-panel="basic">Basic</button>
+    <button class="btn" data-panel="wildcards">Wildcards</button>
+    <button class="btn" data-panel="axes">Axes</button>
+    <button class="btn" data-panel="functions">Functions & Relative</button>
+    <button class="btn" data-panel="sf">Salesforce / LWC / PEGA</button>
+    <!-- NEW: Pega-specific panel button -->
+    <button class="btn" data-panel="pega">Pega</button>
+
+    <div class="section">POM & Steps</div>
+    <div class="switch">
+      <div class="sw active" data-fw="selenium">Selenium</div>
+      <div class="sw" data-fw="playwright">Playwright</div>
+    </div>
+    <div style="height:8px"></div>
+    <div class="switch">
+      <div class="sw active" data-runner="testng">Maven + TestNG</div>
+      <div class="sw" data-runner="cucumber">Maven + Cucumber</div>
+    </div>
+    <div style="height:8px"></div>
+    <div class="switch">
+      <div class="sw active" data-lang="java">Java</div>
+      <div class="sw" data-lang="javascript">JavaScript</div>
+      <div class="sw" data-lang="python">Python</div>
+      <div class="sw" data-lang="typescript">TypeScript</div>
+    </div>
+    <button id="btnGenPOM" class="btn primary" style="margin-top:10px">Generate POM + Steps</button>
+    <button id="btnDownloadPOM" class="btn">Download POM file</button>
+    <button id="btnDownloadSteps" class="btn">Download Steps file</button>
+    <button id="btnZipAll" class="btn">Download ZIP (All)</button>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="toolbar">
+      <div class="title">POM + API Studio</div>
+      <div class="mode-chips">
+        <div id="modePOM" class="mode-chip active">POM Studio</div>
+        <div id="modeAPI" class="mode-chip">API Studio</div>
+      </div>
+      <div class="hint">Row click = copy • Priority: name → label → placeholder</div>
+    </div>
+
+    <div class="workspace">
+     <!-- Left panel for POM Studio -->
+<section id="pomLeftCard" class="card">
+  <div class="head">Paste HTML</div>
+  <div class="body">
+    <textarea id="pasteBox" class="ed" placeholder="Paste full page HTML here..."></textarea>
+    <div class="row">
+      <button id="btnRender" class="btn primary" style="width:auto">Render Preview</button>
+      <div class="pill mono">shadow DOM supported at runtime</div>
+    </div>
+    <div class="head" style="margin:6px -12px 0;border-radius:10px">Preview</div>
+    <div class="body" style="gap:12px">
+      <div id="dropZone" style="border:2px dashed #3a475a;border-radius:12px;padding:10px;text-align:center">Drop .html here</div>
+      <iframe id="preview" class="preview"></iframe>
+    </div>
+  </div>
+</section>
+
+<!-- Right panel -->
+<section class="card">
+  <div id="leftHead" class="head">
+    <div class="chip" data-paneltab="basic">Basic</div>
+    <div class="chip" data-paneltab="wildcards">Wildcards</div>
+    <div class="chip" data-paneltab="axes">Axes</div>
+    <div class="chip" data-paneltab="functions">Functions</div>
+    <div class="chip" data-paneltab="sf">Salesforce</div>
+    <!-- NEW: Pega tab -->
+    <div class="chip" data-paneltab="pega">Pega</div>
+  </div>
+  <div class="body">
+    <div id="locList" class="list"></div>
+    <div class="head" style="margin:8px -12px 0;border-radius:10px">Output</div>
+    <textarea id="output" class="ed mono" placeholder="POM / Steps / Export text will appear here…"></textarea>
+  </div>
+</section>
+
+<!-- API Studio -->
+<section id="apiPanel" class="card hidden">
+  <div class="head">API Studio</div>
+  <div class="body">
+    <div class="row" style="align-items:flex-end">
+      <div style="flex:1">
+        <label class="small">Method</label>
+        <select id="apiMethod"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option></select>
+      </div>
+      <div style="flex:2">
+        <label class="small">URL</label>
+        <input id="apiUrl" type="text" placeholder="https://api.example.com/v1/users"/>
+      </div>
+    </div>
+    <div class="row">
+      <div style="flex:1">
+        <label class="small">Headers (JSON)</label>
+        <textarea id="apiHeaders" class="ed mono" placeholder='{"Authorization":"Bearer ..."}'></textarea>
+      </div>
+      <div style="flex:1">
+        <label class="small">Body (JSON)</label>
+        <textarea id="apiBody" class="ed mono" placeholder='{"name":"vinodh"}'></textarea>
+      </div>
+    </div>
+    <div class="row">
+      <button id="btnGenerateApi" class="btn primary">Generate Code</button>
+      <button id="btnPasteCurl" class="btn">Paste cURL → Parse</button>
+      <button id="btnCopyApiCode" class="btn">Copy Code</button>
+    </div>
+    <div class="head" style="margin:8px -12px 0;border-radius:10px">Generated API Code</div>
+    <textarea id="apiCode" class="ed mono" placeholder="RestAssured / Playwright API code will appear here..."></textarea>
+    <div class="head" style="margin:8px -12px 0;border-radius:10px">Response / Paste here</div>
+    <textarea id="apiResponse" class="ed mono" placeholder="Paste a response JSON here to visualize or to include in tests..."></textarea>
+  </div>
+</section>
+
+    </div>
+  </main>
+</div>
+
+<input id="hiddenFile" type="file" accept=".html,.htm,.xhtml,.txt" hidden/>
+<div id="toast" class="toast">Copied ✔</div>
+
+<script>
+/* =========================
+   Helpers & State
+========================= */
+const $  = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const preview  = $('#preview');
+const locList  = $('#locList');
+const output   = $('#output');
+const pasteBox = $('#pasteBox');
+const hiddenFile = $('#hiddenFile');
+const toast    = $('#toast');
+
+let CURRENT_HTML = '';
+let CURRENT_DOC  = null;
+let CURRENT_LOCATORS = [];   // [{id, tag, text, xpaths:{...}, css, playwright}]
+let SELECTED_IDS = new Set();// selected rows
+
+/* =========================
+   UI: Mode switching
+========================= */
+const modePOM = $('#modePOM');
+const modeAPI = $('#modeAPI');
+const apiPanel = $('#apiPanel');
+modePOM?.addEventListener('click',()=>setMode('pom'));
+modeAPI?.addEventListener('click',()=>setMode('api'));
+
+function setMode(m){
+  modePOM.classList.toggle('active', m==='pom');
+  modeAPI.classList.toggle('active', m==='api');
+  $('#pomLeftCard')?.classList.toggle('hidden', m!=='pom');
+  $('#leftHead')?.classList.toggle('hidden', m!=='pom');
+  apiPanel?.classList.toggle('hidden', m!=='api');
+}
+
+/* =========================
+   Toast
+========================= */
+function showToast(msg){
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(()=>toast.classList.remove('show'),1400);
+}
+
+/* =========================
+   File open / paste / clear
+========================= */
+$('#btnOpenFile')?.addEventListener('click', ()=> hiddenFile.click());
+hiddenFile?.addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload = ev => { pasteBox.value = ev.target.result; renderPreview(); };
+  reader.readAsText(f);
+});
+
+$('#btnPaste')?.addEventListener('click', async ()=>{
+  try{
+    const txt = await navigator.clipboard.readText();
+    if(!txt) return showToast('Clipboard empty');
+    pasteBox.value = txt; renderPreview();
+  }catch(e){ showToast('Clipboard permission denied'); }
+});
+
+$('#btnClear')?.addEventListener('click', ()=>{
+  pasteBox.value = '';
+  preview.srcdoc = '<body style="font-family:sans-serif"><h3>Preview cleared</h3></body>';
+  CURRENT_HTML = ''; CURRENT_DOC = null; CURRENT_LOCATORS = []; SELECTED_IDS = new Set();
+  locList.innerHTML = ''; output.value = '';
+});
+
+/* =========================
+   Drag & Drop to preview area
+========================= */
+const dropZone = $('#dropZone');
+if(dropZone){
+  ['dragenter','dragover'].forEach(ev=>dropZone.addEventListener(ev,e=>{ e.preventDefault(); dropZone.style.borderColor='#5a48f0'; }));
+  ['dragleave','drop'].forEach(ev=>dropZone.addEventListener(ev,e=>{ e.preventDefault(); dropZone.style.borderColor='#3a475a'; }));
+  dropZone.addEventListener('drop', e=>{
+    const f=e.dataTransfer.files?.[0]; if(!f) return;
+    const reader=new FileReader();
+    reader.onload = ev => { pasteBox.value = ev.target.result; renderPreview(); };
+    reader.readAsText(f);
+  });
+}
+
+/* =========================
+   Render → extract
+========================= */
+$('#btnRender')?.addEventListener('click', renderPreview);
+function renderPreview(){
+  const html = pasteBox.value?.trim() || '<!doctype html><meta charset="utf-8"><body><h3>Paste HTML and click Render</h3></body>';
+  CURRENT_HTML = html;
+  preview.srcdoc = html;
+
+  const parser = new DOMParser();
+  CURRENT_DOC = parser.parseFromString(html, 'text/html');
+
+  setTimeout(extractAllLocators, 50);
+  showToast('Preview rendered');
+}
+
+/* =========================
+   Locator Panels: tab + sidebar sync
+========================= */
+const leftHead = $('#leftHead');
+leftHead?.addEventListener('click', e=>{
+  const chip = e.target.closest('.chip'); if(!chip) return;
+  $$('.chip').forEach(c=>c.classList.remove('active'));
+  chip.classList.add('active');
+  fillLocatorList(chip.dataset.paneltab || 'basic');
+});
+$$('.side .btn[data-panel]').forEach(b=>b.addEventListener('click',()=>{
+  $$('.chip').forEach(c=>c.classList.remove('active'));
+  const sel = b.dataset.panel;
+  const chip = $(`.chip[data-paneltab="${sel}"]`);
+  if(chip){ chip.classList.add('active'); fillLocatorList(sel); }
+  showToast(sel+' panel');
+}));
+
+/* =========================
+   Locator Extraction Core
+========================= */
+function bestLabelFor(el){
+  const txt = (el.getAttribute?.('aria-label') || el.getAttribute?.('title') || el.getAttribute?.('placeholder') || el.textContent || '').trim();
+  return txt.replace(/\s+/g,' ').slice(0,80);
+}
+
+// SVG-aware basic XPath
+function genBasicXPath(el){
+  const isSVG = (typeof SVGElement!=='undefined') && (el instanceof SVGElement || el.ownerSVGElement!=null);
+  const tag = el.tagName.toLowerCase();
+  const tagExpr = isSVG ? `*[local-name()='${tag}']` : tag;
+  if(el.id) return `//*[@id="${el.id}"]`;
+  if(el.getAttribute && el.getAttribute('name')) return `//${tagExpr}[@name="${el.getAttribute('name')}"]`;
+  const label = bestLabelFor(el);
+  if(label) return `//${tagExpr}[contains(normalize-space(.),"${label.replace(/"/g,'\\"')}")]`;
+  const cls = (el.getAttribute?.('class')||'').trim().split(/\s+/).filter(Boolean)[0];
+  if(cls) return `//${tagExpr}[contains(@class,"${cls}")]`;
+  const parent = el.parentElement || el.parentNode;
+  if(!parent || parent.nodeType!==1) return `//${tagExpr}[1]`;
+  const same = Array.from(parent.children||[]).filter(x=>x.tagName===el.tagName);
+  const idx = same.indexOf(el)+1;
+  return `(${genBasicXPath(parent)}/${tagExpr})[${idx}]`;
+}
+function genWildcardXPath(el){
+  const tag=el.tagName.toLowerCase();
+  const label = bestLabelFor(el);
+  if(label) return `//*[contains(normalize-space(.),"${label.replace(/"/g,'\\"')}")]`;
+  const name = el.getAttribute?.('name'); if(name) return `//${tag}[contains(@name,"${name}")]`;
+  const id = el.id; if(id) return `//*[contains(@id,"${id}")]`;
+  const cls = (el.getAttribute?.('class')||'').trim().split(/\s+/).find(Boolean); if(cls) return `//*[contains(@class,"${cls}")]`;
+  return genBasicXPath(el);
+}
+function genAxesXPath(el){
+  const tag = el.tagName.toLowerCase();
+  const label = bestLabelFor(el);
+  if(label) return `//${tag}[normalize-space(.)="${label.replace(/"/g,'\\"')}"] | //label[normalize-space(.)="${label.replace(/"/g,'\\"')}"]/following::${tag}[1]`;
+  const parent = el.closest?.('[id],[name],[class]') || el.parentElement;
+  if(parent && parent!==el){
+    const pid = parent.id ? `//*[@id="${parent.id}"]` : genBasicXPath(parent);
+    return `${pid}//${tag}[1]`;
+  }
+  return genBasicXPath(el);
+}
+function genFunctionXPath(el){
+  const tag = el.tagName.toLowerCase();
+  const label = bestLabelFor(el);
+  if(label) return `//${tag}[contains(normalize-space(.),"${label.replace(/"/g,'\\"')}")]`;
+  const ph = el.getAttribute?.('placeholder'); if(ph) return `//${tag}[starts-with(@placeholder,"${ph.split(' ')[0]}")]`;
+  const aria = el.getAttribute?.('aria-label'); if(aria) return `//${tag}[normalize-space(@aria-label)="${aria.replace(/"/g,'\\"')}"]`;
+  return genBasicXPath(el);
+}
+
+// Stubs for framework-specific generators (keep yours if already present)
+function genSalesforceXPath(el){ return genFunctionXPath(el); }
+function genSalesforceSmartXPath(el){ return genFunctionXPath(el); }
+function genPegaXPath(el){ return genFunctionXPath(el); }
+function genPegaSmartXPath(el){ return genFunctionXPath(el); }
+function genCSS(el){ try{ return el?.selectorText || ''; }catch(e){ return ''; } }
+function genPlaywright(el){ return ''; }
+
+// Collector
+function extractAllLocators(){
+  if(!CURRENT_DOC){ locList.innerHTML=''; return; }
+  const doc = CURRENT_DOC;
+
+  let elements = [];
+  // fallback collector
+  const basics = Array.from(doc.querySelectorAll(
+    'input,button,a,select,textarea,' +
+    'span[role="button"],[role="button"],' +
+    '[data-ctl],[data-qa-locator],' +
+    '[data-aura-class],[data-aura-rendered-by],[data-key],[data-id],' +
+    '*[class*="slds-"]'
+  ));
+  const lwc = Array.from(doc.querySelectorAll([
+    'lightning-input','lightning-button','lightning-combobox','lightning-textarea',
+    'lightning-record-edit-form','lightning-tab','lightning-input-field','lightning-formatted-text'
+  ].join(',')));
+  const svg = Array.from(doc.querySelectorAll('svg, svg *'));
+  const all = [...new Set([...basics, ...lwc, ...svg])];
+
+  elements = all.filter(el=>{
+    const style = (el.getAttribute?.('style')||'').toLowerCase();
+    if(style.includes('display:none') || style.includes('visibility:hidden')) return false;
+    return true;
+  });
+
+  const sfDetected   = !!doc.querySelector('*[data-aura-rendered-by], *[class*="slds-"]');
+  const pegaDetected = !!doc.querySelector('[data-ctl],span[data-ctl]');
+
+  CURRENT_LOCATORS = elements.map((el,idx)=>{
+    const tag = el.tagName.toLowerCase();
+    const label = bestLabelFor(el);
+    const x = {
+      basic:     genBasicXPath(el),
+      wildcards: genWildcardXPath(el),
+      axes:      genAxesXPath(el),
+      functions: genFunctionXPath(el),
+      sf:        genSalesforceXPath(el) || '',
+      sfsmart:   genSalesforceSmartXPath(el) || '',
+      pega:      genPegaXPath(el) || '',
+      pegasmart: genPegaSmartXPath(el) || ''
+    };
+    return {
+      id: `E${idx+1}`,
+      tag,
+      text: label,
+      framework: pegaDetected ? 'Pega+' : (sfDetected ? 'Salesforce+' : ''),
+      xpaths: x,
+      playwright: genPlaywright(el) || '',
+      css: ''
+    };
+  });
+
+  fillLocatorList('basic');
+  showToast(`Extracted ${CURRENT_LOCATORS.length} elements`);
+}
+
+/* =========================
+   Locator List (expand/collapse + selection + param)
+========================= */
+function fillLocatorList(panel='basic'){
+  locList.innerHTML = '';
+  if(!CURRENT_LOCATORS.length) return;
+
+  CURRENT_LOCATORS.forEach(loc=>{
+    let value = (loc.xpaths?.[panel]) || loc.xpaths.basic;
+    if(panel==='sf'   && loc.xpaths.sfsmart)   value = loc.xpaths.sfsmart   || loc.xpaths.sf;
+    if(panel==='pega' && loc.xpaths.pegasmart) value = loc.xpaths.pegasmart || loc.xpaths.pega;
+
+    const row = document.createElement('div');
+    row.className = 'loc-row';
+    row.innerHTML = `
+      <input type="checkbox" class="sel" data-id="${loc.id}" style="margin-right:6px" ${SELECTED_IDS.has(loc.id)?'checked':''} />
+      <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
+        <span class="badge">${(loc.framework||'').trim() || loc.tag}</span>
+        <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40ch">${loc.text || '(no text)'}</div>
+      </div>
+      <div class="mono val" style="flex:2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${(value||loc.css||loc.playwright||'').replace(/"/g,'&quot;')}">${value || loc.css || loc.playwright || ''}</div>
+      <div class="act">
+        <button class="btn" style="width:auto;padding:4px 8px" data-action="copy">Copy</button>
+        <button class="btn" style="width:auto;padding:4px 8px" data-action="highlight">Highlight</button>
+        <button class="btn" style="width:auto;padding:4px 8px" data-action="param">Param</button>
+      </div>
+    `;
+
+    // 1) default: row click = copy
+    row.addEventListener('click', e=>{
+      if(e.target.closest('button') || e.target.closest('input')) return;
+      const toCopy = value || loc.css || loc.playwright || '';
+      if(!toCopy) return;
+      navigator.clipboard.writeText(toCopy).then(()=>showToast('Copied'));
+    });
+
+    // 2) double-tap/dblclick value area = expand/collapse (see full)
+    const valEl = row.querySelector('.val');
+    let tapT=0;
+    valEl.addEventListener('click', ev=>{
+      const now = Date.now();
+      if(now-tapT<300){ // double tap
+        ev.stopPropagation();
+        const expanded = valEl.style.whiteSpace==='normal';
+        valEl.style.whiteSpace = expanded?'nowrap':'normal';
+        valEl.style.overflow = expanded?'hidden':'visible';
+        valEl.style.textOverflow = expanded?'ellipsis':'clip';
+      }
+      tapT = now;
+    });
+
+    // 3) buttons
+    row.querySelector('[data-action="copy"]').addEventListener('click', e=>{
+      e.stopPropagation();
+      const toCopy = value || loc.css || loc.playwright || '';
+      if(!toCopy) return;
+      navigator.clipboard.writeText(toCopy).then(()=>showToast('Copied'));
+    });
+    row.querySelector('[data-action="highlight"]').addEventListener('click', e=>{
+      e.stopPropagation();
+      tryHighlight(loc.xpaths.basic, loc.css);
+    });
+    row.querySelector('[data-action="param"]').addEventListener('click', e=>{
+      e.stopPropagation();
+      let xp = (loc.xpaths && (loc.xpaths.sfsmart||loc.xpaths.sf||loc.xpaths.pegasmart||loc.xpaths.pega||loc.xpaths.functions||loc.xpaths.wildcards||loc.xpaths.axes||loc.xpaths.basic)) || '';
+      if(!xp){ alert('No XPath available'); return; }
+      xp = xp.replace(/(=\s*["'])([^"']+)(["'])/, `$1%s$3`); // first quoted literal → %s
+      navigator.clipboard.writeText(xp).then(()=>showToast('Param XPath copied'));
+    });
+
+    // 4) selection
+    row.querySelector('input.sel').addEventListener('change', ev=>{
+      if(ev.target.checked) SELECTED_IDS.add(loc.id); else SELECTED_IDS.delete(loc.id);
+    });
+
+    locList.appendChild(row);
+  });
+}
+
+/* =========================
+   Preview highlight helpers
+========================= */
+function findByXPathInIframe(xpath){
+  try{
+    const doc = preview.contentDocument || preview.contentWindow.document;
+    const iter = doc.evaluate(xpath, doc, null, XPathResult.ORDERED_NODE_ITERATOR_TYPE, null);
+    return iter.iterateNext();
+  }catch(e){ return null; }
+}
+function highlightElementInIframe(el){
+  if(!el) return;
+  const old = el.style.outline;
+  el.scrollIntoView({behavior:'smooth', block:'center', inline:'center'});
+  el.style.outline = '2px solid #7c5cff';
+  setTimeout(()=>{ el.style.outline = old; }, 1000);
+}
+function tryHighlight(xpath, css){
+  const looksXPath = !!xpath && (/^(\(?\/\/|\.\/\/|\/\/|\(\s*\/\/)/.test(xpath));
+  if(looksXPath){ const el = findByXPathInIframe(xpath); if(el){ highlightElementInIframe(el); return; } }
+  try{ const doc = preview.contentDocument || preview.contentWindow.document; const el = doc.querySelector(css); if(el) highlightElementInIframe(el); }catch(e){}
+}
+
+/* =========================
+   Export (locators + checks)
+========================= */
+$('#btnExport')?.addEventListener('click', ()=>{
+  if(!CURRENT_LOCATORS.length) return showToast('Nothing to export');
+  const chosen = SELECTED_IDS.size ? CURRENT_LOCATORS.filter(l=>SELECTED_IDS.has(l.id)) : CURRENT_LOCATORS;
+  const lines = [];
+  lines.push('// Export — locators with basic checks');
+  chosen.forEach(l=>{
+    lines.push(`// ${l.id} — <${l.tag}> — ${l.text}`);
+    lines.push(`XPath (best): ${l.xpaths.sfsmart||l.xpaths.sf||l.xpaths.pegasmart||l.xpaths.pega||l.xpaths.functions||l.xpaths.wildcards||l.xpaths.axes||l.xpaths.basic}`);
+    lines.push(`XPath (basic): ${l.xpaths.basic}`);
+    lines.push(`XPath (wildcards): ${l.xpaths.wildcards}`);
+    lines.push(`XPath (axes): ${l.xpaths.axes}`);
+    lines.push(`XPath (functions): ${l.xpaths.functions}`);
+    lines.push(`XPath (salesforce): ${l.xpaths.sf}`);
+    lines.push(`XPath (pega): ${l.xpaths.pega}`);
+    lines.push(`CSS: ${l.css}`);
+    lines.push(`Playwright: ${l.playwright}`);
+    lines.push('Checks:');
+    lines.push('  - visible');
+    lines.push('  - enabled');
+    lines.push('  - clickable');
+    lines.push('');
+  });
+  const blob = new Blob([lines.join('\\n')], {type:'text/plain'});
+  downloadBlob(blob, SELECTED_IDS.size? 'locators_selected.txt' : 'locators_export.txt');
+  output.value = lines.join('\\n');
+  showToast(SELECTED_IDS.size? 'Exported selected' : 'Exported');
+});
+
+/* =========================
+   Generate POM + Steps (works)
+========================= */
+$('#btnGenPOM')?.addEventListener('click', ()=>{
+  if(!CURRENT_LOCATORS.length) return showToast('Render & extract first');
+  const fw     = $('.sw[data-fw].active')?.dataset.fw || 'selenium';    // selenium | playwright
+  const runner = $('.sw[data-runner].active')?.dataset.runner || 'testng'; // testng | cucumber
+  const lang   = $('.sw[data-lang].active')?.dataset.lang || 'java';    // java | javascript | python | typescript
+
+  const res = buildArtifacts({fw, runner, lang, locs: CURRENT_LOCATORS});
+  output.value = `// ===== POM =====\\n${res.pom}\\n\\n// ===== Steps =====\\n${res.steps}`;
+  showToast('POM + Steps generated');
+});
+
+/* ---------- Artifact Builders ---------- */
+function buildArtifacts({fw, runner, lang, locs}){
+  if(lang==='java'){
+    if(fw==='selenium') return javaSeleniumArtifacts(runner, locs);
+    else return javaPlaywrightArtifacts(runner, locs);
+  }
+  if(lang==='javascript') return jsPlaywrightArtifacts(locs);
+  if(lang==='typescript') return tsPlaywrightArtifacts(locs);
+  if(lang==='python')     return pyPlaywrightArtifacts(locs);
+  return {pom:'// Unsupported', steps:''};
+}
+
+function javaSeleniumArtifacts(runner, locs){
+  const fields = locs.map((l,i)=>`  @FindBy(xpath = "${(l.xpaths.sfsmart||l.xpaths.sf||l.xpaths.pegasmart||l.xpaths.pega||l.xpaths.functions||l.xpaths.wildcards||l.xpaths.axes||l.xpaths.basic).replace(/"/g,'\\"')}")\n  private WebElement el${i+1};`).join('\n\n');
+  const actions = locs.map((l,i)=>`  public void clickEl${i+1}(){ ensureClickable(el${i+1}); el${i+1}.click(); }`).join('\n');
+  const waits = `
+  private WebDriver driver;
+  private WebDriverWait wait;
+  public SamplePage(WebDriver driver){
+    this.driver = driver;
+    PageFactory.initElements(driver, this);
+    this.wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+  }
+  private void ensureVisible(WebElement e){ wait.until(ExpectedConditions.visibilityOf(e)); }
+  private void ensureClickable(WebElement e){ wait.until(ExpectedConditions.elementToBeClickable(e)); }`;
+
+  const pom = `import org.openqa.selenium.*; 
+import org.openqa.selenium.support.FindBy;
+import org.openqa.selenium.support.PageFactory;
+import org.openqa.selenium.support.ui.*;
+import java.time.Duration;
+
+public class SamplePage {
+${fields}
+
+${waits}
+
+${actions}
+}
+`;
+
+  const steps = (runner==='cucumber')
+    ? `import io.cucumber.java.en.*;\nimport org.openqa.selenium.*;\n\npublic class Steps {\n  private WebDriver driver;\n  private SamplePage page;\n  @Given("I open the app") public void open(){ /* driver init */ page = new SamplePage(driver); }\n  @When("I click first element") public void c1(){ page.clickEl1(); }\n  @Then("I see result") public void see(){ /* assert */ }\n}\n`
+    : `import org.openqa.selenium.*;\nimport org.testng.annotations.*;\n\npublic class TestSample {\n  private WebDriver driver;\n  private SamplePage page;\n  @BeforeClass public void setup(){ /* init driver */ page = new SamplePage(driver); }\n  @Test public void t1(){ page.clickEl1(); }\n  @AfterClass public void cleanup(){ if(driver!=null) driver.quit(); }\n}\n`;
+
+  return {pom, steps};
+}
+
+function javaPlaywrightArtifacts(runner, locs){
+  const fields = locs.map((l,i)=>`  private Locator el${i+1};`).join('\n');
+  const init   = locs.map((l,i)=>`    el${i+1} = page.locator("${(l.playwright||'').replace(/"/g,'\\"') || (l.xpaths.basic? `xpath=${l.xpaths.basic.replace(/"/g,'\\"')}` : 'css=*')}");`).join('\n');
+  const actions= locs.map((l,i)=>`  public void clickEl${i+1}(){ el${i+1}.click(); }`).join('\n');
+
+  const pom = `import com.microsoft.playwright.*;\n\npublic class PwPage {\n  private Page page;\n${fields}\n  public PwPage(Page page){\n    this.page = page;\n${init}\n  }\n${actions}\n}\n`;
+  const steps = `// create BrowserType.LaunchOptions etc., then new PwPage(page) and call actions`;
+  return {pom, steps};
+}
+
+function jsPlaywrightArtifacts(locs){
+  const fields = locs.map((l,i)=>`  const el${i+1} = page.locator(\`${l.playwright || (l.xpaths.basic? 'xpath=' + l.xpaths.basic : 'css=*')}\`);`).join('\n');
+  const pom = `// JS Playwright sample\nmodule.exports.test = async ({ page }) => {\n${fields}\n  await el1.click();\n};\n`;
+  return {pom, steps:''};
+}
+function tsPlaywrightArtifacts(locs){
+  const fields = locs.map((l,i)=>`  const el${i+1} = page.locator(\`${l.playwright || (l.xpaths.basic? 'xpath=' + l.xpaths.basic : 'css=*')}\`);`).join('\n');
+  const pom = `// TS Playwright sample\nexport async function test(page: import('@playwright/test').Page){\n${fields}\n  await el1.click();\n}\n`;
+  return {pom, steps:''};
+}
+function pyPlaywrightArtifacts(locs){
+  const fields = locs.map((l,i)=>`    el${i+1} = page.locator("${l.playwright || (l.xpaths.basic? 'xpath=' + l.xpaths.basic : 'css=*')}")`).join('\n');
+  const pom = `# Python Playwright sample\ndef test_example(page):\n${fields}\n    el1.click()\n`;
+  return {pom, steps:''};
+}
+
+/* =========================
+   API Studio (unchanged minimal)
+========================= */
+$('#btnGenerateApi')?.addEventListener('click', ()=>{
+  const method = $('#apiMethod')?.value || 'GET';
+  const url    = $('#apiUrl')?.value || '';
+  const headers= $('#apiHeaders')?.value || '';
+  const body   = $('#apiBody')?.value || '';
+  const code = `// RestAssured\ngiven().headers(${headers||'{}'}).body(${body||'null'}).when().${method.toLowerCase()}("${url}").then().statusCode(200);`;
+  $('#apiCode').value = code;
+  showToast('API code generated');
+});
+
+/* =========================
+   Utils
+========================= */
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 0);
+}
+
+setMode('pom'); // default
+</script>
+</body>
+</html>
