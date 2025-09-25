@@ -1,0 +1,444 @@
+Feature: Locate Customer popup validation using DataTable
+
+  Background:
+    Given I open the Agent Landing page
+    And the Locate Customer popup is displayed
+
+  @HappyPath
+  Scenario: Enter details into Locate Customer popup using DataTable
+    When I enter the following customer details
+      | Account Number | 1234567890123456 |
+      | SSN            | 1234             |
+      | Date of Birth  | 01/01/1990       |
+      | Phone Number   | 9876543210       |
+    And I click Verify to trigger validation
+    Then I should see the following values populated
+      | Account Number | 1234567890123456 |
+      | SSN            | 1234             |
+      | Date of Birth  | 01/01/1990       |
+      | Phone Number   | 9876543210       |
+
+  @CheckboxValidation
+  Scenario: Validate disabling input fields when checkboxes are selected
+    When I clear the following fields
+      | Account Number |
+      | Phone Number   |
+    And I select the following checkboxes
+      | Account Number Not Available |
+      | Phone Number Not Available   |
+    Then the following fields should be disabled
+      | Account Number |
+      | Phone Number   |
+
+  @ValidationErrors
+  Scenario: Invalid inputs show proper validation messages (DataTable)
+    When I enter the following customer details
+      | Account Number | 123456789012345 |
+      | SSN            | 2                |
+      | Date of Birth  | 31-31-1990       |
+      | Phone Number   | 1234             |
+    And I click Verify to trigger validation
+    Then I should see the following error messages
+      | Account Number | Enter 16 digit account Number    |
+      | SSN            | Enter 4 digit SSN                |
+      | Date of Birth  | Please enter valid date MM/DD/YYYY |
+      | Phone Number   | Enter 10 digit Phone Number      |
+
+
+// pages
+
+package pages;
+
+import org.openqa.selenium.*;
+import org.openqa.selenium.support.*;
+import org.openqa.selenium.support.ui.*;
+
+import java.time.Duration;
+
+public class IdvCustomerLocatePopup {
+
+    WebDriver driver;
+    WebDriverWait wait;
+
+    public IdvCustomerLocatePopup(WebDriver driver) {
+        this.driver = driver;
+        PageFactory.initElements(driver, this);
+        this.wait = new WebDriverWait(driver, Duration.ofSeconds(8));
+    }
+
+    // ==== LOCATORS (adjust xpaths if needed) ====
+    @FindBy(xpath = "//b[contains(text(),'Locate Customer')]")
+    private WebElement locateCustomerIDVHeader;
+
+    @FindBy(xpath = "//input[@name='idvAccountNumber']")
+    private WebElement idvAccountNumberField;
+
+    @FindBy(xpath = "//input[contains(@class,'uiInputCheckbox') and (contains(@name,'account') or contains(@id,'Account'))]")
+    private WebElement idvAccountNumberCheckbox;
+
+    @FindBy(xpath = "//label[contains(normalize-space(),'Social Security')]/following::input[1]")
+    private WebElement idvSSNField;
+
+    @FindBy(xpath = "//input[@name='idvDOB']")
+    private WebElement idvDOBField;
+
+    @FindBy(xpath = "//input[@type='checkbox' and (contains(@name,'phone') or contains(@id,'Phone') or contains(@class,'phoneCheckBox'))]")
+    private WebElement idvPhoneCheckbox;
+
+    @FindBy(xpath = "//input[@name='idvPhoneNumber']")
+    private WebElement idvPhoneField;
+
+    @FindBy(xpath = "//div[@class='modal-footer']//button[contains(normalize-space(),'Unidentified Prospect')]")
+    private WebElement unidentifiedProspectBtn;
+
+    @FindBy(xpath = "//button[contains(normalize-space(),'Verify') or contains(normalize-space(),'Locate') or contains(normalize-space(),'Find')]")
+    private WebElement verifyBtn;
+
+    // Error message locators (as seen in screenshot)
+    @FindBy(xpath = "//input[@name='idvAccountNumber']/following::div[contains(text(),'16 digit account')][1]")
+    private WebElement accountNumberError;
+
+    @FindBy(xpath = "//label[contains(text(),'Social Security')]/following::div[contains(text(),'4 digit SSN')][1]")
+    private WebElement ssnError;
+
+    @FindBy(xpath = "//input[@name='idvDOB']/following::div[contains(text(),'MM/DD/YYYY')][1]")
+    private WebElement dobError;
+
+    @FindBy(xpath = "//input[@name='idvPhoneNumber']/following::div[contains(text(),'10 digit Phone')][1]")
+    private WebElement phoneError;
+
+    // ==== BASIC ACTIONS ====
+    public boolean isPopupVisible() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(locateCustomerIDVHeader));
+            return locateCustomerIDVHeader.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public void setAccountNumber(String accNo) {
+        waitAndClear(idvAccountNumberField);
+        idvAccountNumberField.sendKeys(accNo);
+    }
+
+    public void setSSN(String ssn) {
+        waitAndClear(idvSSNField);
+        idvSSNField.sendKeys(ssn);
+    }
+
+    public void setDOB(String dob) {
+        waitAndClear(idvDOBField);
+        idvDOBField.sendKeys(dob);
+    }
+
+    public void setPhoneNumber(String phone) {
+        waitAndClear(idvPhoneField);
+        idvPhoneField.sendKeys(phone);
+    }
+
+    public void clearAccountNumber() {
+        waitAndClear(idvAccountNumberField);
+    }
+
+    public void clearSSN() {
+        waitAndClear(idvSSNField);
+    }
+
+    public void clearDOB() {
+        waitAndClear(idvDOBField);
+    }
+
+    public void clearPhoneNumber() {
+        waitAndClear(idvPhoneField);
+    }
+
+    public String getAccountNumber() {
+        return safeGetAttribute(idvAccountNumberField, "value");
+    }
+
+    public String getSSN() {
+        return safeGetAttribute(idvSSNField, "value");
+    }
+
+    public String getDOB() {
+        return safeGetAttribute(idvDOBField, "value");
+    }
+
+    public String getPhoneNumber() {
+        return safeGetAttribute(idvPhoneField, "value");
+    }
+
+    public void clickAccountNumberCheckbox() {
+        try {
+            if (!idvAccountNumberCheckbox.isSelected()) idvAccountNumberCheckbox.click();
+        } catch (Exception e) { /* ignore */ }
+    }
+
+    public void clickPhoneCheckbox() {
+        try {
+            if (!idvPhoneCheckbox.isSelected()) idvPhoneCheckbox.click();
+        } catch (Exception e) { /* ignore */ }
+    }
+
+    public boolean isAccountNumberDisabled() {
+        return !idvAccountNumberField.isEnabled();
+    }
+
+    public boolean isPhoneDisabled() {
+        return !idvPhoneField.isEnabled();
+    }
+
+    public void clickVerifyIfPresent() {
+        try {
+            if (verifyBtn != null && verifyBtn.isDisplayed() && verifyBtn.isEnabled()) {
+                verifyBtn.click();
+            } else {
+                // fallback: blur DOB to trigger validation
+                blurElement(idvDOBField);
+            }
+        } catch (Exception e) {
+            blurElement(idvDOBField);
+        }
+    }
+
+    // ===== validation getters =====
+    public String getAccountNumberError() {
+        return safeGetText(accountNumberError);
+    }
+
+    public String getSSNError() {
+        return safeGetText(ssnError);
+    }
+
+    public String getDOBError() {
+        return safeGetText(dobError);
+    }
+
+    public String getPhoneError() {
+        return safeGetText(phoneError);
+    }
+
+    // ==== helpers ====
+    private void waitAndClear(WebElement el) {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(el));
+            el.clear();
+        } catch (Exception e) {
+            try { el.sendKeys(Keys.CONTROL + "a"); el.sendKeys(Keys.DELETE); } catch (Exception ignored) {}
+        }
+    }
+
+    private String safeGetAttribute(WebElement el, String attr) {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(el));
+            String v = el.getAttribute(attr);
+            return v == null ? "" : v;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private String safeGetText(WebElement el) {
+        try {
+            if (el == null) return "";
+            wait.until(ExpectedConditions.visibilityOf(el));
+            return el.getText().trim();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private void blurElement(WebElement el) {
+        try {
+            if (locateCustomerIDVHeader.isDisplayed()) locateCustomerIDVHeader.click();
+            else el.sendKeys(Keys.TAB);
+            Thread.sleep(300);
+        } catch (Exception ignored) {}
+    }
+}
+
+
+//steps
+
+package stepdefinitions;
+
+import io.cucumber.datatable.DataTable;
+import io.cucumber.java.en.*;
+import org.junit.Assert;
+import pages.IdvCustomerLocatePopup;
+import support.Hooks;
+import org.openqa.selenium.WebDriver;
+
+import java.util.List;
+import java.util.Map;
+
+public class LocateCustomerSteps {
+
+    WebDriver driver = Hooks.driver;
+    IdvCustomerLocatePopup popup;
+
+    public LocateCustomerSteps() {
+        this.popup = new IdvCustomerLocatePopup(Hooks.driver);
+    }
+
+    @Given("I open the Agent Landing page")
+    public void open_agent_landing_page() {
+        // Replace with your actual Agent Landing URL or perform login steps
+        String agentLandingUrl = "https://your-instance.lightning.force.com/lightning/n/Agent_Landing";
+        Hooks.driver.get(agentLandingUrl);
+    }
+
+    @Given("the Locate Customer popup is displayed")
+    public void locate_popup_displayed() {
+        Assert.assertTrue("Locate Customer popup not visible", popup.isPopupVisible());
+    }
+
+    // ------------------ DataTable input ------------------
+    @When("I enter the following customer details")
+    public void enter_customer_details(DataTable dataTable) {
+        // DataTable expected as two-column table (key | value)
+        Map<String, String> data = dataTable.asMap(String.class, String.class);
+        for (Map.Entry<String, String> entry : data.entrySet()) {
+            String field = entry.getKey().trim();
+            String value = entry.getValue().trim();
+            switch (field) {
+                case "Account Number":
+                    popup.setAccountNumber(value);
+                    break;
+                case "SSN":
+                    popup.setSSN(value);
+                    break;
+                case "Date of Birth":
+                    popup.setDOB(value);
+                    break;
+                case "Phone Number":
+                    popup.setPhoneNumber(value);
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unknown field: " + field);
+            }
+        }
+    }
+
+    @When("I click Verify to trigger validation")
+    public void click_verify() {
+        popup.clickVerifyIfPresent();
+        try { Thread.sleep(600); } catch (InterruptedException ignored) {}
+    }
+
+    @Then("I should see the following values populated")
+    public void validate_values_populated(DataTable dataTable) {
+        Map<String, String> expected = dataTable.asMap(String.class, String.class);
+        for (Map.Entry<String, String> e : expected.entrySet()) {
+            String field = e.getKey().trim();
+            String expectedValue = e.getValue().trim();
+            String actual = "";
+            switch (field) {
+                case "Account Number":
+                    actual = popup.getAccountNumber();
+                    break;
+                case "SSN":
+                    actual = popup.getSSN();
+                    break;
+                case "Date of Birth":
+                    actual = popup.getDOB();
+                    break;
+                case "Phone Number":
+                    actual = popup.getPhoneNumber();
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unknown field: " + field);
+            }
+            Assert.assertEquals("Mismatch for " + field, expectedValue, actual);
+        }
+    }
+
+    // ------------------ clearing fields (table of single column) ------------------
+    @When("I clear the following fields")
+    public void clear_fields(DataTable table) {
+        List<String> fields = table.asList();
+        for (String f : fields) {
+            String field = f.trim();
+            switch (field) {
+                case "Account Number":
+                    popup.clearAccountNumber();
+                    break;
+                case "SSN":
+                    popup.clearSSN();
+                    break;
+                case "Date of Birth":
+                    popup.clearDOB();
+                    break;
+                case "Phone Number":
+                    popup.clearPhoneNumber();
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unknown field to clear: " + field);
+            }
+        }
+    }
+
+    // ------------------ checkbox selection (table of single column) ------------------
+    @When("I select the following checkboxes")
+    public void select_checkboxes(DataTable table) {
+        List<String> checkboxes = table.asList();
+        for (String cb : checkboxes) {
+            String label = cb.trim();
+            if (label.toLowerCase().contains("account")) popup.clickAccountNumberCheckbox();
+            else if (label.toLowerCase().contains("phone")) popup.clickPhoneCheckbox();
+            else throw new IllegalArgumentException("Unknown checkbox label: " + label);
+        }
+    }
+
+    @Then("the following fields should be disabled")
+    public void fields_should_be_disabled(DataTable table) {
+        List<String> fields = table.asList();
+        for (String f : fields) {
+            String field = f.trim();
+            switch (field) {
+                case "Account Number":
+                    Assert.assertTrue("Account Number should be disabled", popup.isAccountNumberDisabled());
+                    break;
+                case "Phone Number":
+                    Assert.assertTrue("Phone Number should be disabled", popup.isPhoneDisabled());
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unknown field in disabled check: " + field);
+            }
+        }
+    }
+
+    // ------------------ validation errors (map field -> expected message) ------------------
+    @Then("I should see the following error messages")
+    public void validate_error_messages(DataTable dataTable) {
+        Map<String, String> expected = dataTable.asMap(String.class, String.class);
+        for (Map.Entry<String, String> e : expected.entrySet()) {
+            String field = e.getKey().trim();
+            String expectedMsg = e.getValue().trim().toLowerCase();
+            String actual = "";
+            switch (field) {
+                case "Account Number":
+                    actual = popup.getAccountNumberError();
+                    break;
+                case "SSN":
+                    actual = popup.getSSNError();
+                    break;
+                case "Date of Birth":
+                    actual = popup.getDOBError();
+                    break;
+                case "Phone Number":
+                    actual = popup.getPhoneError();
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unknown field for error validation: " + field);
+            }
+            Assert.assertTrue("Expected error for " + field + " to contain [" + expectedMsg + "] but was: " + actual,
+                    actual.toLowerCase().contains(expectedMsg));
+        }
+    }
+}
+
+
+
+
