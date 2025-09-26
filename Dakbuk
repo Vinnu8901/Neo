@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Offline XPath Locator & POM + API Studio</title>
+<style>
+  :root{
+    --bg:#0f1217; --panel:#151a21; --panel2:#171e27; --chip:#202734;
+    --txt:#e9eef5; --dim:#9db0c5; --brd:#273243;
+    --accent:#7c5cff; --ok:#19c37d; --warn:#ffbf47; --bad:#ff4d4f;
+    --ed-bg:#fbfcfe; --ed-brd:#dfe6ee; --ed-txt:#0f172a;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
+  .app{display:grid;grid-template-columns:280px 1fr;height:100%}
+
+  /* Sidebar */
+  .side{background:linear-gradient(180deg,#0f1217 0,#0f1217 60%,#0b0e13 100%);border-right:1px solid var(--brd);padding:18px 16px;overflow:auto}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;margin-bottom:14px}
+  .beacon{width:10px;height:10px;border-radius:50%;background:linear-gradient(180deg,var(--accent),#563bff);box-shadow:0 0 10px var(--accent)}
+  .section{margin:16px 0 8px;color:var(--dim);font-size:12px;letter-spacing:.12em;text-transform:uppercase}
+  .btn{width:100%;text-align:left;cursor:pointer;background:var(--panel);border:1px solid var(--brd);border-radius:10px;padding:10px 12px;color:var(--txt);font-weight:600;margin-bottom:8px;transition:.15s}
+  .btn:hover{background:var(--panel2);transform:translateY(-1px)}
+  .btn.primary{background:linear-gradient(180deg,var(--accent),#6047ff);border-color:#5b49f2}
+  .btn.danger{background:linear-gradient(180deg,#ff4d4f,#e13b3e);border-color:#e13b3e}
+  .pill{display:flex;gap:8px;align-items:center;background:var(--chip);border:1px solid var(--brd);border-radius:999px;padding:8px 10px;width:max-content;color:var(--dim);font-size:12px}
+  .switch{display:flex;gap:8px}
+  .switch .sw{padding:8px 12px;border:1px solid var(--brd);border-radius:10px;background:var(--panel);cursor:pointer}
+  .sw.active{outline:2px solid rgba(124,92,255,.35)}
+
+  /* Main */
+  .main{display:grid;grid-template-rows:auto 1fr auto}
+  .toolbar{display:flex;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--brd);background:var(--panel);position:sticky;top:0;z-index:5}
+  .toolbar .title{font-weight:800}
+  .hint{color:var(--dim);font-size:12px;margin-left:auto}
+
+  .mode-chips{display:flex;gap:8px}
+  .mode-chip{padding:6px 10px;border-radius:8px;background:#0f1419;border:1px solid var(--brd);cursor:pointer;color:var(--dim);font-weight:700}
+  .mode-chip.active{background:linear-gradient(90deg,var(--accent),#5a48f0);color:#fff;box-shadow:0 6px 18px rgba(90,72,240,.12)}
+
+  .workspace{display:grid;grid-template-columns:48% 52%;gap:14px;padding:14px;overflow:auto}
+  .card{background:var(--panel);border:1px solid var(--brd);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .card .head{background:var(--panel2);padding:12px 14px;border-bottom:1px solid var(--brd);display:flex;align-items:center;gap:10px;font-weight:700}
+  .card .body{padding:12px;display:flex;flex-direction:column;gap:10px;min-height:140px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  select,input[type="text"]{background:var(--panel2);border:1px solid var(--brd);border-radius:10px;color:var(--txt);padding:8px 10px}
+  textarea.ed{background:var(--ed-bg);border:1px solid var(--ed-brd);border-radius:12px;color:var(--ed-txt);padding:10px;min-height:130px;font-family:ui-monospace,Menlo,Consolas,monospace}
+
+  /* Preview */
+  iframe#preview{width:100%;height:360px;background:#fff;border:none;border-radius:8px}
+  .drop{display:flex;justify-content:center;align-items:center;height:56px;border:2px dashed #3a475a;border-radius:12px;color:var(--dim)}
+
+  /* Locator tabs/list */
+  .chip-tabs{display:flex;gap:8px;flex-wrap:wrap;background:var(--panel);border-bottom:1px solid var(--brd);padding:8px 12px}
+  .chip{padding:8px 12px;border:1px solid var(--brd);border-radius:999px;background:#1a2230;color:#b8c6d9;font-size:12px;cursor:pointer}
+  .chip.active{color:#fff;border-color:var(--accent);box-shadow:0 0 0 2px rgba(124,92,255,.25) inset}
+
+  .list{display:flex;flex-direction:column;gap:6px;max-height:280px;overflow:auto;background:var(--ed-bg);border:1px solid var(--ed-brd);border-radius:12px;padding:8px}
+  .loc-row{background:#fff;border:1px solid #e6ecf5;border-radius:8px;padding:8px 10px;color:#0f172a;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .loc-row:hover{background:#f5f8ff}
+  .badge{font-size:11px;background:#eef2ff;border:1px solid #d8e1ff;border-radius:999px;padding:2px 8px;margin-right:8px;color:#1f2b46}
+
+  .footer{display:flex;gap:10px;align-items:center;padding:12px 16px;border-top:1px solid var(--brd);background:var(--panel)}
+
+  .toast{position:fixed;bottom:16px;right:16px;background:#131a24;border:1px solid #2a3648;color:#cfe3ff;padding:10px 12px;border-radius:10px;opacity:0;transform:translateY(8px);transition:.15s}
+  .toast.show{opacity:1;transform:translateY(0)}
+  .small{font-size:12px;color:var(--dim)}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .hidden{display:none}
+  @media (max-width:980px){.workspace{grid-template-columns:1fr}}
+</style>
+
+<!-- (Optional) JSZip for ZIP exports if your script uses it -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="side">
+    <div class="brand"><span class="beacon"></span> Offline XPath Studio</div>
+
+    <div class="section">Workspace</div>
+    <button class="btn" id="btnPaste">Paste HTML</button>
+    <button class="btn" id="btnOpenFile">Open .html file</button>
+    <div class="pill">Drag & drop file into preview</div>
+    <button class="btn danger" id="btnClear">Clear</button>
+    <button class="btn" id="btnExport">Export (locators + checks)</button>
+
+    <div class="section">POM &amp; Steps</div>
+    <div class="switch">
+      <div class="sw active" data-fw="selenium">Selenium</div>
+      <div class="sw" data-fw="playwright">Playwright</div>
+    </div>
+    <div style="height:8px"></div>
+    <div class="switch">
+      <div class="sw active" data-runner="testng">Maven + TestNG</div>
+      <div class="sw" data-runner="cucumber">Maven + Cucumber</div>
+    </div>
+    <div style="height:8px"></div>
+    <div class="switch">
+      <div class="sw active" data-lang="java">Java</div>
+      <div class="sw" data-lang="javascript">JavaScript</div>
+      <div class="sw" data-lang="python">Python</div>
+      <div class="sw" data-lang="typescript">TypeScript</div>
+    </div>
+    <button class="btn primary" id="btnGenPOM" style="margin-top:10px">Generate POM + Steps</button>
+    <button class="btn" id="btnDownloadPOM">Download POM file</button>
+    <button class="btn" id="btnDownloadSteps">Download Steps file</button>
+    <button class="btn" id="btnZipAll">Download ZIP (All)</button>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="toolbar">
+      <div class="title">Offline XPath Recorder — Paste Mode</div>
+      <div class="mode-chips">
+        <div class="mode-chip active" id="modePOM">POM Studio</div>
+        <div class="mode-chip" id="modeAPI">API Studio</div>
+      </div>
+      <div class="hint">Row click = copy • Priority: name → label → class → placeholder</div>
+    </div>
+
+    <div class="workspace">
+      <!-- Left panel (POM) -->
+      <section class="card" id="pomLeftCard">
+        <div class="head">Paste HTML</div>
+        <div class="body">
+          <textarea class="ed" id="pasteBox" placeholder="Paste full page HTML here..."></textarea>
+          <div class="row">
+            <button class="btn primary" id="btnRender" style="width:auto">Render Preview</button>
+            <div class="pill mono">shadow DOM supported at runtime</div>
+          </div>
+          <div class="head" style="margin:6px -12px 0;border-radius:10px">Preview</div>
+          <div class="body" style="gap:12px">
+            <div id="dropZone" class="drop">Drop .html here</div>
+            <iframe id="preview" sandbox="allow-same-origin allow-forms allow-scripts"></iframe>
+          </div>
+        </div>
+      </section>
+
+      <!-- Left panel (API) -->
+      <section class="card hidden" id="apiLeftCard">
+        <div class="head">Paste cURL</div>
+        <div class="body">
+          <textarea class="ed mono" id="curlBox" placeholder="Paste cURL here (from Postman/Insomnia)..."></textarea>
+          <div class="row" style="align-items:center; gap:12px">
+            <label class="small">Framework</label>
+            <select id="apiFramework">
+              <option value="restassured">RestAssured (Java)</option>
+              <option value="karate">Karate DSL</option>
+            </select>
+            <button class="btn primary" id="btnGenAPI" style="width:auto">Generate API Code</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right panel -->
+      <section class="card" id="rightCard">
+        <div class="head">Locators &amp; Code</div>
+        <div class="body" id="rightBody">
+          <!-- Locator tabs (your script can toggle these) -->
+          <div class="chip-tabs" id="locatorTabs">
+            <div class="chip active" data-paneltab="basic">Basic</div>
+            <div class="chip" data-paneltab="wildcards">Wildcards</div>
+            <div class="chip" data-paneltab="axes">Axes</div>
+            <div class="chip" data-paneltab="functions">Functions & Relatives</div>
+            <div class="chip" data-paneltab="sf">Salesforce</div>
+            <div class="chip" data-paneltab="pega">Pega</div>
+          </div>
+
+          <!-- Toolbar placeholder (for copy/apply/template) -->
+          <div id="locator-toolbar" style="display:flex; gap:10px; align-items:center; margin:10px 0;">
+            <label><input type="checkbox" id="loc-sel-all"> Select all</label>
+            <label><input type="checkbox" id="loc-template"> Template (%s)</label>
+            <button id="loc-copy" class="btn" style="padding:6px 10px;width:auto">Copy selected</button>
+            <button id="loc-download" class="btn" style="padding:6px 10px;width:auto">Download selected</button>
+            <span id="loc-count" style="margin-left:auto; color:#9db0c5; font-size:13px;"></span>
+          </div>
+
+          <!-- Primary locator list container -->
+          <div id="locator-list" class="list" style="max-height:46vh;">
+            <!-- Hidden legacy dump & legacy id for backward-compat -->
+            <div id="locator-dump" style="display:none;"></div>
+            <div id="locList" style="display:none;"></div>
+          </div>
+
+          <div class="head" style="margin:8px -12px 0;border-radius:10px">Output</div>
+          <textarea class="ed mono" id="output" placeholder="POM / Steps / Export text will appear here…"></textarea>
+        </div>
+      </section>
+    </div>
+
+    <div class="footer">
+      <div class="pill">Copy any locator by clicking its row</div>
+      <div class="pill">Export includes isVisible / isClickable / isEnabled with waits</div>
+    </div>
+  </main>
+</div>
+
+<input id="hiddenFile" type="file" accept=".html,.htm,.xhtml,.txt" hidden/>
+<div id="toast" class="toast">Ready ✔</div>
+
+<!-- Minimal glue so older scripts don't crash if they look for #locList -->
+<script>
+  (function(){
+    // Map legacy #locList calls to #locator-list when needed
+    const legacy = document.getElementById('locList');
+    const primary = document.getElementById('locator-list');
+    if (legacy && primary) {
+      // Provide a tiny proxy so code that does locList.innerHTML = '...' still paints visibly.
+      Object.defineProperty(legacy, 'innerHTML', {
+        set(v){ primary.innerHTML = v; },
+        get(){ return primary.innerHTML; }
+      });
+      legacy.style.display = 'none';
+    }
+
+    // Safe toast helper your scripts can reuse if needed
+    window.showToast = function(msg){
+      try{
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.classList.add('show');
+        clearTimeout(t._h);
+        t._h = setTimeout(()=>t.classList.remove('show'), 1400);
+      }catch(e){ console.log(msg); }
+    };
+
+    // Optional: keep toolbar visible if created dynamically elsewhere
+    try{
+      var tb = document.getElementById('locator-toolbar');
+      if(tb) tb.style.display = 'flex';
+    }catch(e){}
+  })();
+  
+    
+
+
+  
+/* ===================================================
+  Adhyan Offline — Full merged script (Phases 1..9)
+  Replace your old <script> with this block.
+=================================================== */
+window.AdhyPatch = window.AdhyPatch || {};
+const NS = window.AdhyPatch;
+
+// ----------------------------- Phase 1: Global state -----------------------------
+NS.CURRENT_DOC = NS.CURRENT_DOC || null;
+NS.CURRENT_HTML = NS.CURRENT_HTML || '';
+NS.CURRENT_LOCATORS = NS.CURRENT_LOCATORS || [];
+NS.CUSTOM_LOCATORS = NS.CUSTOM_LOCATORS || [];
+NS.POM_CACHE = NS.POM_CACHE || { pom: '', steps: '' };
+NS.MODE = NS.MODE || 'generic';
+NS.DEBUG = NS.DEBUG || false;
+NS.version = NS.version || 'adhy-merged-1.1-patch';
+
+// ----------------------------- Phase 2: Utilities -----------------------------
+(function(){
+  NS.$ = NS.$ || ((sel, root=document) => { try { return (root||document).querySelector(sel); } catch(e){ return null; } });
+  NS.$$ = NS.$$ || ((sel, root=document) => { try { return Array.from((root||document).querySelectorAll(sel)); } catch(e){ return []; } });
+
+  NS.escapeHtml = NS.escapeHtml || (s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'));
+  NS.sanitizeVar = NS.sanitizeVar || (s => (s||'elem').toString().replace(/[^a-zA-Z0-9_$]/g,'_').slice(0,40));
+
+  NS.showToast = NS.showToast || function(msg, type='info'){
+    try {
+      let t = document.getElementById('__adhy_toast');
+      if(!t){
+        t = document.createElement('div'); t.id='__adhy_toast';
+        t.style.cssText = 'position:fixed;right:16px;bottom:16px;padding:8px 12px;border-radius:8px;background:rgba(0,0,0,0.75);color:#fff;z-index:2147483647;font-family:system-ui,Arial;opacity:1;transition:opacity .18s';
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+      t.style.background = (type==='error')? '#b91c1c' : (type==='success')? '#047857' : 'rgba(0,0,0,0.75)';
+      t.style.opacity = '1';
+      clearTimeout(t._t);
+      t._t = setTimeout(()=> t.style.opacity = '0', 1600);
+    } catch(e){ console.log(msg); }
+  };
+
+  NS.copyToClipboard = NS.copyToClipboard || async function(text){
+    try {
+      await navigator.clipboard.writeText(text);
+      NS.showToast('Copied', 'success'); return true;
+    } catch(e){
+      try {
+        const ta = document.createElement('textarea'); ta.value = text; ta.style.position='fixed'; ta.style.left='-9999px';
+        document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); ta.remove();
+        NS.showToast('Copied (fallback)', 'success'); return true;
+      } catch(err){
+        NS.showToast('Copy failed', 'error'); return false;
+      }
+    }
+  };
+
+  NS.xpathLiteral = NS.xpathLiteral || function(s){
+    s = String(s||'');
+    if (s.indexOf('"') === -1) return `"${s}"`;
+    if (s.indexOf("'") === -1) return `'${s}'`;
+    const parts = s.split('"'), out=[];
+    for(let i=0;i<parts.length;i++){
+      if(parts[i] !== '') out.push(`"${parts[i].replace(/\\/g,'\\\\')}"`);
+      if(i < parts.length-1) out.push(`'"'`);
+    }
+    return `concat(${out.join(',')})`;
+  };
+
+  NS.cssSelectorFor = NS.cssSelectorFor || function(el){
+    if(!el || !el.tagName) return '';
+    if(el.id) try { return `#${CSS.escape(el.id)}` } catch(e){ return '#'+el.id; }
+    let sel = el.tagName.toLowerCase();
+    if(el.classList && el.classList.length) sel += '.' + Array.from(el.classList).slice(0,3).map(c=>c.replace(/\s+/g,'')).join('.');
+    const name = el.getAttribute && el.getAttribute('name');
+    if(name) sel += `[name="${name}"]`;
+    return sel;
+  };
+})();
+
+// ----------------------------- Phase 3: Preview accessors & handlers -----------------------------
+(function(){
+  const PREVIEW_SELECTORS = ['#preview','iframe#preview','.preview','iframe.preview'];
+
+  function getPreviewElement(){
+    for(const s of PREVIEW_SELECTORS){
+      const el = document.querySelector(s);
+      if(el) return el;
+    }
+    return document.querySelector('iframe') || null;
+  }
+
+  function getPreviewDocument(){
+    const el = getPreviewElement();
+    if(!el) return window._PARSER_DOC || document;
+    if(el.tagName && el.tagName.toLowerCase() === 'iframe'){
+      try { if(el.contentDocument) return el.contentDocument; } catch(e){}
+      if(el.srcdoc) try { return (new DOMParser()).parseFromString(el.srcdoc,'text/html'); } catch(e){}
+    }
+    try {
+      const inner = el.querySelector && el.querySelector('iframe'); if(inner && inner.contentDocument) return inner.contentDocument;
+    } catch(e){}
+    return window._PARSER_DOC || document;
+  }
+
+  window.getPreviewElement = getPreviewElement;
+  window.getPreviewDocument = getPreviewDocument;
+
+  window._AdhyanPreviewListeners = window._AdhyanPreviewListeners || [];
+  function attachPreviewHandler(doc, type, handler){
+    try {
+      if(!doc) return;
+      doc.addEventListener(type, handler, true);
+      window._AdhyanPreviewListeners.push({doc, type, handler});
+    } catch(e){}
+  }
+  function detachAllPreviewHandlers(){
+    try {
+      (window._AdhyanPreviewListeners || []).forEach(o=>{
+        try { o.doc.removeEventListener(o.type, o.handler, true); } catch(e){}
+      });
+      window._AdhyanPreviewListeners = [];
+    } catch(e){}
+  }
+
+  NS.attachPreviewHandler = attachPreviewHandler;
+  NS.detachAllPreviewHandlers = detachAllPreviewHandlers;
+})();
+
+// ----------------------------- Phase 4: Iframe & Shadow traversal + highlight -----------------------------
+(function(){
+  function evaluateXPath(doc, xpath){
+    try { return doc.evaluate(xpath, doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue; } catch(e){ return null; }
+  }
+
+  function findInShadowRoots(xpath, root){
+    try {
+      const direct = evaluateXPath(root, xpath);
+      if(direct) return direct;
+    } catch(e){}
+    try {
+      const walker = root.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+      let node = walker.nextNode();
+      while(node){
+        if(node.shadowRoot){
+          const found = findInShadowRoots(xpath, node.shadowRoot);
+          if(found) return found;
+        }
+        node = walker.nextNode();
+      }
+    } catch(e){}
+    return null;
+  }
+
+  function findInIframes(xpath, win){
+    win = win || window;
+    try {
+      const doc = win.document;
+      const direct = evaluateXPath(doc, xpath);
+      if(direct) return { el: direct, win };
+      const inShadow = findInShadowRoots(xpath, doc);
+      if(inShadow) return { el: inShadow, win };
+      const frames = doc.querySelectorAll ? Array.from(doc.querySelectorAll('iframe,frame')) : [];
+      for(let i=0;i<frames.length;i++){
+        const fr = frames[i];
+        try {
+          if(!fr.contentWindow) continue;
+          const res = findInIframes(xpath, fr.contentWindow);
+          if(res && res.el) return res;
+        } catch(e){ /* cross origin */ }
+      }
+    } catch(e){}
+    return null;
+  }
+
+  function transientHighlightElement(el, opts){
+    if(!el || !el.style) return;
+    opts = opts || {};
+    const color = opts.color || 'rgba(124,92,255,0.45)';
+    const orig = { outline: el.style.outline || '', boxShadow: el.style.boxShadow || '' };
+    try { el.style.outline = `3px solid ${color}`; el.style.boxShadow = `0 0 0 4px ${color}`; el.scrollIntoView({behavior:'auto', block:'center'}); } catch(e){}
+    setTimeout(()=>{ try { el.style.outline = orig.outline; el.style.boxShadow = orig.boxShadow; } catch(e){} }, opts.duration || 2000);
+  }
+
+  NS.findInIframes = findInIframes;
+  NS.transientHighlightElement = transientHighlightElement;
+
+  NS.tryHighlightByXPath = function(xpath){
+    if(!xpath) return false;
+    try {
+      const d = evaluateXPath(document, xpath);
+      if(d){ transientHighlightElement(d, {color:'rgba(255,165,0,0.6)'}); return true; }
+    } catch(e){}
+    try {
+      const previewEl = window.getPreviewElement && window.getPreviewElement();
+      if(previewEl && previewEl.tagName && previewEl.tagName.toLowerCase()==='iframe'){
+        try {
+          const pd = previewEl.contentDocument;
+          if(pd){
+            const pfound = evaluateXPath(pd, xpath) || findInShadowRoots(xpath, pd);
+            if(pfound){ transientHighlightElement(pfound, {color:'rgba(0,150,255,0.45)'}); return true; }
+          }
+        } catch(err){}
+      }
+    } catch(e){}
+    try {
+      const res = findInIframes(xpath, window);
+      if(res && res.el){ transientHighlightElement(res.el, {color:'rgba(0,150,255,0.45)'}); return true; }
+    } catch(e){}
+    return false;
+  };
+
+  NS.findElementByFrameChainAndXPath = function(frameDescriptors, xpath){
+    try {
+      let currentWindow = window.top;
+      for(let i=0;i<frameDescriptors.length;i++){
+        const desc = frameDescriptors[i];
+        let frames = Array.from(currentWindow.document.querySelectorAll('iframe,frame'));
+        if(desc.id) frames = frames.filter(f => f.id === desc.id);
+        if(desc.name) frames = frames.filter(f => (f.getAttribute && f.getAttribute('name')) === desc.name);
+        if(desc.index) frames = frames.filter(f=>{
+          let p=1, sib=f.previousElementSibling;
+          while(sib){ if(sib.tagName === f.tagName) p++; sib=sib.previousElementSibling; }
+          return p === desc.index;
+        });
+        if(frames.length === 0) return null;
+        const chosen = frames[0];
+        try { if(!chosen.contentWindow) return null; currentWindow = chosen.contentWindow; } catch(e){ return null; }
+      }
+      const doc = currentWindow.document;
+      const el = evaluateXPath(doc, xpath);
+      return el ? { el, win: currentWindow } : null;
+    } catch(e){ return null; }
+  };
+})();
+
+// ----------------------------- Phase 5: Locator gen & extraction -----------------------------
+(function(){
+  function safeAttr(el, name){ try { return el.getAttribute ? el.getAttribute(name) : null; } catch(e){ return null; } }
+
+  function getLabelFor(el){
+    try {
+      if(!el) return '';
+      const id = el.id;
+      if(id){
+        try { const l = document.querySelector && document.querySelector(`label[for="${id}"]`); if(l) return l.textContent.trim(); } catch(e){}
+      }
+      if(el.closest) {
+        const parentLabel = el.closest('label'); if(parentLabel) return parentLabel.textContent.trim();
+      }
+      const txt = (el.innerText || el.textContent || '').trim();
+      if(txt) return txt.slice(0,120);
+      const placeholder = safeAttr(el,'placeholder'); if(placeholder) return placeholder;
+      return '';
+    } catch(e){ return ''; }
+  }
+
+  function genBasicXPath(el){
+    if(!el) return '';
+    if(el.id) return `//*[@id=${NS.xpathLiteral(el.id)}]`;
+    const tag = el.tagName.toLowerCase();
+    const name = safeAttr(el,'name');
+    if(name) return `//${tag}[@name=${NS.xpathLiteral(name)}]`;
+    const label = getLabelFor(el);
+    if(label) return `//${tag}[contains(normalize-space(.), ${NS.xpathLiteral(label)})]`;
+    // Build relative chain up to depth 10
+    let parts = [];
+    let cur = el; let depth=0;
+    while(cur && cur.nodeType===1 && depth<10){
+      const t = cur.tagName.toLowerCase();
+      let ix = 1; let sib = cur.previousElementSibling;
+      while(sib){ if(sib.tagName === cur.tagName) ix++; sib = sib.previousElementSibling; }
+      parts.unshift(`${t}${ix>1?`[${ix}]`:''}`);
+      cur = cur.parentElement; depth++;
+    }
+    return '//' + parts.join('/');
+  }
+
+  function genWildcardXPath(el){
+    if(!el) return genBasicXPath(el);
+    if(el.id) return `//*[@id=${NS.xpathLiteral(el.id)}]`;
+    const tag = el.tagName.toLowerCase();
+    const label = getLabelFor(el);
+    if(label) return `//*[contains(normalize-space(.), ${NS.xpathLiteral(label)})]`;
+    const name = safeAttr(el,'name'); if(name) return `//*[contains(@name, ${NS.xpathLiteral(name)})]`;
+    const cls = (safeAttr(el,'class')||'').split(/\s+/).filter(Boolean)[0];
+    if(cls) return `//*[contains(concat(' ', normalize-space(@class), ' '), ${NS.xpathLiteral(' '+cls+' ')})]`;
+    return genBasicXPath(el);
+  }
+
+  function genAxesXPath(el){
+    if(!el) return genBasicXPath(el);
+    const tag = el.tagName.toLowerCase();
+    const id = el.id;
+    if(id) return `//label[@for=${NS.xpathLiteral(id)}]/following::${tag}[1]`;
+    const label = getLabelFor(el);
+    if(label) return `//label[contains(normalize-space(.), ${NS.xpathLiteral(label)})]/following::${tag}[1]`;
+    return genBasicXPath(el);
+  }
+
+  function genFunctionXPath(el){
+    if(!el) return genBasicXPath(el);
+    const tag = el.tagName.toLowerCase();
+    const placeholder = safeAttr(el,'placeholder'); if(placeholder) return `//${tag}[contains(@placeholder, ${NS.xpathLiteral(placeholder)})]`;
+    const title = safeAttr(el,'title'); if(title) return `//${tag}[contains(@title, ${NS.xpathLiteral(title)})]`;
+    const aria = safeAttr(el,'aria-label'); if(aria) return `//${tag}[@aria-label=${NS.xpathLiteral(aria)}]`;
+    return genBasicXPath(el);
+  }
+
+  function genSalesforceXPath(el){
+    if(!el) return '';
+    const tag = el.tagName.toLowerCase();
+    if(safeAttr(el,'data-qa-locator')) return `//${tag}[@data-qa-locator=${NS.xpathLiteral(safeAttr(el,'data-qa-locator'))}]`;
+    if(safeAttr(el,'data-id')) return `//${tag}[@data-id=${NS.xpathLiteral(safeAttr(el,'data-id'))}]`;
+    return '';
+  }
+  function genPegaXPath(el){
+    if(!el) return '';
+    const tag = el.tagName.toLowerCase();
+    if(safeAttr(el,'data-test-id')) return `//${tag}[@data-test-id=${NS.xpathLiteral(safeAttr(el,'data-test-id'))}]`;
+    if(safeAttr(el,'data-ctl')) return `//${tag}[@data-ctl=${NS.xpathLiteral(safeAttr(el,'data-ctl'))}]`;
+    return '';
+  }
+
+  NS.genBasicXPath = genBasicXPath;
+  NS.genWildcardXPath = genWildcardXPath;
+  NS.genAxesXPath = genAxesXPath;
+  NS.genFunctionXPath = genFunctionXPath;
+  NS.genSalesforceXPath = genSalesforceXPath;
+  NS.genPegaXPath = genPegaXPath;
+
+  NS.extractAllLocators = function(forceUseParsed){
+    let DOC = document;
+    const previewEl = document.getElementById('preview');
+    if(previewEl && previewEl.tagName && previewEl.tagName.toLowerCase()==='iframe' && !forceUseParsed){
+      try {
+        if(previewEl.contentDocument) DOC = previewEl.contentDocument;
+      } catch(e){
+        if(window._PARSER_DOC) DOC = window._PARSER_DOC;
+        else { DOC = document; NS.showToast('Preview is cross-origin; falling back to parsed DOM', 'warn'); }
+      }
+    } else if(window._PARSER_DOC && forceUseParsed){
+      DOC = window._PARSER_DOC;
+    } else if(window._PARSER_DOC && !previewEl){
+      DOC = window._PARSER_DOC;
+    }
+
+    let elements = [];
+    if (typeof collectCandidateElements === 'function') {
+      try { elements = collectCandidateElements(DOC); } catch(e){ elements = []; }
+    } else {
+      try { elements = Array.from(DOC.querySelectorAll('a,button,input:not([type=hidden]),select,textarea,[role="button"],[data-qa-locator],[data-test-id]')); } catch(e){ elements = []; }
+    }
+
+    const filtered = (elements||[]).filter(el => {
+      try {
+        if(!el || el.nodeType !== 1) return false;
+        if(el.hasAttribute && el.hasAttribute('hidden')) return false;
+        const s = (el.getAttribute && el.getAttribute('style')) || '';
+        if(s && (/display\s*:\s*none|visibility\s*:\s*hidden/).test(s)) return false;
+        // skip tiny icons that are not actionable (allow clickable)
+        return true;
+      } catch(e){ return false; }
+    });
+
+    const results = [];
+    const seen = new Set();
+    filtered.forEach((el)=>{
+      try {
+        const tag = (el.tagName || '').toLowerCase();
+        const label = getLabelFor(el) || '';
+        const xp_basic = genBasicXPath(el);
+        const xp_wild = genWildcardXPath(el);
+        const xp_axes = genAxesXPath(el);
+        const xp_funcs = genFunctionXPath(el);
+        const xp_sf = genSalesforceXPath(el);
+        const xp_pega = genPegaXPath(el);
+        const css = NS.cssSelectorFor(el);
+        const pw = (typeof window.generatePlaywrightSelectors === 'function')? window.generatePlaywrightSelectors(el) : css;
+        const sig = [tag, el.id||'', el.getAttribute && el.getAttribute('name')||'', xp_basic||'', label||''].join('|');
+        if(seen.has(sig)) return;
+        seen.add(sig);
+        results.push({
+          id: el.id || `E${results.length+1}`,
+          tag, text: label,
+          xpaths: { basic: xp_basic, wildcards: xp_wild, axes: xp_axes, functions: xp_funcs, sf: xp_sf, pega: xp_pega },
+          css, playwright: pw, elementRef: el
+        });
+      } catch(e){}
+    });
+
+    window.CURRENT_LOCATORS = results;
+    try { NS.fillLocatorList && NS.fillLocatorList('basic'); } catch(e){}
+    NS.showToast(`Extracted ${results.length} elements`);
+    return results;
+  };
+})();
+
+// ----------------------------- Phase 6: Locator List UI -----------------------------
+(function(){
+  function pickValue(it, panel){
+    panel = panel || 'basic';
+    if(!it) return '';
+    if(it.xpaths && it.xpaths[panel]) return it.xpaths[panel];
+    if(it.xpaths && (it.xpaths.sf || it.xpaths.pega)) return it.xpaths.sf || it.xpaths.pega;
+    return it.css || (typeof it.playwright === 'string' ? it.playwright : '');
+  }
+
+  // Ensure toolbar creation accessible to other phases
+  NS.ensureToolbar = NS.ensureToolbar || function(){
+    const locList = document.getElementById('locList') || document.getElementById('locator-list');
+    if(!locList) return null;
+    let bar = document.getElementById('locator-toolbar');
+    if(!bar){
+      bar = document.createElement('div');
+      bar.id = 'locator-toolbar';
+      bar.style.cssText = 'display:flex;gap:8px;align-items:center;margin:8px 0';
+      locList.parentNode.insertBefore(bar, locList);
+    }
+    return bar;
+  };
+
+  // Safe show toolbar helper
+  NS.showLocatorToolbar = NS.showLocatorToolbar || function(){
+    const bar = NS.ensureToolbar();
+    if(bar){ bar.style.display = 'flex'; return bar; }
+    return null;
+  };
+
+  NS.fillLocatorList = function(panel='basic'){
+    panel = panel || 'basic';
+    const container = document.getElementById('locList') || document.getElementById('locator-list');
+    if(!container){
+      console.debug('locList not found');
+      return;
+    }
+    container.innerHTML = '';
+    const data = window.CURRENT_LOCATORS || [];
+    if(!data.length){ container.innerHTML = '<div class="small">No locators. Render and extract first.</div>'; return; }
+
+    // ensure toolbar exists
+    NS.ensureToolbar();
+
+    data.forEach((it, idx)=>{
+      const val = pickValue(it, panel) || '';
+      const row = document.createElement('div'); row.className = 'loc-row';
+      const left = document.createElement('div'); left.style.display='flex'; left.style.alignItems='center'; left.style.gap='8px';
+      const cb = document.createElement('input'); cb.type='checkbox'; cb.className='loc-check'; cb.dataset.id = it.id || '';
+      const badge = document.createElement('span'); badge.className='badge'; badge.textContent = it.framework || it.tag || 'elem';
+      const label = document.createElement('div'); label.style.flex='1'; label.style.minWidth='0';
+      label.innerHTML = `<div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${NS.escapeHtml(it.text||'(no text)')}</div><div class="small" style="color:#6b7280">${NS.escapeHtml(it.id || '')}</div>`;
+      left.appendChild(cb); left.appendChild(badge); left.appendChild(label);
+
+      const mid = document.createElement('div'); mid.className='mono'; mid.style.flex='2'; mid.style.whiteSpace='nowrap'; mid.style.overflow='hidden'; mid.style.textOverflow='ellipsis';
+      mid.textContent = val;
+
+      const act = document.createElement('div'); act.style.display='flex'; act.style.gap='6px';
+      const btnCopy = document.createElement('button'); btnCopy.className='btn'; btnCopy.textContent='Copy';
+      const btnHi = document.createElement('button'); btnHi.className='btn'; btnHi.textContent='Highlight';
+      const btnParam = document.createElement('button'); btnParam.className='btn'; btnParam.textContent='Param';
+      act.appendChild(btnCopy); act.appendChild(btnHi); act.appendChild(btnParam);
+
+      row.appendChild(left); row.appendChild(mid); row.appendChild(act);
+
+      // Row click: copy & highlight
+      row.addEventListener('click', async (e)=>{
+        if(e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+        const copyVal = (mid.textContent || '').trim();
+        if(!copyVal) return NS.showToast('No locator to copy', 'error');
+        const ok = NS.tryHighlightByXPath(copyVal);
+        await NS.copyToClipboard(copyVal);
+        NS.showToast(ok ? 'Copied & highlighted' : 'Copied');
+      });
+
+      btnCopy.addEventListener('click', async (ev)=>{
+        ev.stopPropagation();
+        const toCopy = (mid.textContent || '').trim();
+        if(!toCopy) return;
+        await NS.copyToClipboard(toCopy);
+      });
+      btnHi.addEventListener('click', (ev)=>{
+        ev.stopPropagation();
+        const xpath = (mid.textContent || '').trim();
+        if(!xpath) return NS.tryHighlightByXPath(xpath);
+      });
+      btnParam.addEventListener('click', (ev)=>{
+        ev.stopPropagation();
+        const xpath = (mid.textContent || '').trim();
+        if(!xpath) return;
+        const name = prompt('Enter placeholder name (optional)', 'id');
+        const tpl = xpath.replace(/(["'])(?:(?=(\\?))\2.)*?\1/, (m)=> (m.length>2 ? (m[0]+'%s'+m[m.length-1]) : m ));
+        NS.copyToClipboard(tpl);
+        NS.showToast('Param template copied');
+      });
+
+      container.appendChild(row);
+    });
+
+    // make toolbar visible (safely)
+    NS.showLocatorToolbar();
+  };
+
+  document.querySelectorAll('.chip').forEach(ch=>{
+    ch.addEventListener('click', (e)=>{
+      document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));
+      ch.classList.add('active');
+      const panel = ch.dataset.paneltab || 'basic';
+      NS.fillLocatorList(panel);
+    });
+  });
+})();
+
+// ----------------------------- Phase 7: Dynamic picker & templates -----------------------------
+(function(){
+  function toTemplate(xpath){
+    if(!xpath) return '';
+    let s = xpath.replace(/(["'])(?:(?=(\\?))\2.)*?\1/g, m => (m.length>2 ? (m[0] + '%s' + m[m.length-1]) : m));
+    s = s.replace(/\[\d+\]/g, '[%s]');
+    return s;
+  }
+
+  function generateTemplatesForElement(el){
+    if(!el) return [];
+    const list = [];
+    if(el.id) list.push(`//*[@id='${'%s'}']`.replace(/'%s'|"%s"/g, "'%s'"));
+    const dataAttrs = Array.from(el.attributes||[]).filter(a=>/^data-/.test(a.name)).map(a=>a.name);
+    if(dataAttrs.length) list.push(`//*[@${dataAttrs[0]}='%s']`);
+    if(el.getAttribute && el.getAttribute('name')) list.push(`//*[@name='%s']`);
+    const txt = (el.textContent||'').trim();
+    if(txt) list.push(`//${el.tagName.toLowerCase()}[contains(normalize-space(.),'%s')]`);
+    const basic = (typeof NS.genBasicXPath === 'function') ? NS.genBasicXPath(el) : null;
+    if(basic) list.push(basic.replace(/\[\d+\]/g,'[%s]'));
+    return Array.from(new Set(list)).filter(Boolean);
+  }
+
+  function openDynamicPicker(onPicked){
+    if(window._adhy_picker_active) return;
+    const overlay = document.createElement('div'); overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.18);z-index:2147483646;cursor:crosshair';
+    const hint = document.createElement('div'); hint.style.cssText = 'position:fixed;top:16px;right:16px;background:#fff;padding:10px;border-radius:8px;z-index:2147483647;color:#0b1220';
+    hint.innerHTML = '<strong>Picker</strong><div style="font-size:12px;margin-top:6px">Hover & click element. Esc to cancel.</div>';
+    document.body.appendChild(overlay); document.body.appendChild(hint);
+    let last=null;
+    function onOver(e){
+      const t=e.target;
+      if(last && last !== t) try { last.style.outline = last._origOutline||'' } catch(e){}
+      last = t;
+      if(!t || t === overlay || t === hint || (t.closest && t.closest('#locator-toolbar'))) return;
+      try { last._origOutline = t.style.outline || ''; t.style.outline = '3px solid rgba(0,200,150,0.85)'; } catch(e){}
+      e.stopPropagation();
+    }
+    function onClick(e){
+      e.preventDefault(); e.stopPropagation();
+      const picked = e.target;
+      cleanup();
+      const templates = generateTemplatesForElement(picked);
+      if(typeof onPicked === 'function') onPicked(templates, picked);
+    }
+    function onKey(e){ if(e.key === 'Escape') { cleanup(); NS.showToast('Picker canceled'); } }
+    function cleanup(){
+      try { document.removeEventListener('mouseover', onOver, true); document.removeEventListener('click', onClick, true); document.removeEventListener('keydown', onKey, true); } catch(e){}
+      if(last) try { last.style.outline = last._origOutline || ''; } catch(e){}
+      overlay.remove(); hint.remove(); window._adhy_picker_active = false;
+    }
+    document.addEventListener('mouseover', onOver, true);
+    document.addEventListener('click', onClick, true);
+    document.addEventListener('keydown', onKey, true);
+    window._adhy_picker_active = true;
+  }
+
+  // create toolbar UI controls (if not present)
+  try {
+    const bar = NS.ensureToolbar && NS.ensureToolbar();
+    if(bar){
+      // avoid duplicate controls
+      if(!bar.dataset._adhy_controls){
+        const select = document.createElement('select'); select.id='dynamic-template-select'; select.style.cssText='padding:6px;border-radius:6px';
+        ['id','data','name','aria','contains-text','custom'].forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; select.appendChild(o); });
+        const pickerBtn = document.createElement('button'); pickerBtn.className='btn'; pickerBtn.textContent='Picker';
+        const applyBtn = document.createElement('button'); applyBtn.className='btn'; applyBtn.textContent='Apply to selected';
+        const preview = document.createElement('input'); preview.type='text'; preview.id='dynamic-preview'; preview.placeholder='Template preview'; preview.style.cssText='min-width:320px;padding:6px;border-radius:6px';
+        const copyBtn = document.createElement('button'); copyBtn.className='btn'; copyBtn.textContent='Copy';
+        bar.appendChild(select); bar.appendChild(pickerBtn); bar.appendChild(applyBtn); bar.appendChild(preview); bar.appendChild(copyBtn);
+        bar.dataset._adhy_controls = '1';
+        pickerBtn.addEventListener('click', ()=> openDynamicPicker((templates, el) => {
+          preview.value = (templates && templates[0]) || '';
+          bar.dataset.lastTemplates = JSON.stringify(templates || []);
+        }));
+        copyBtn.addEventListener('click', ()=> {
+          const val = preview.value || '';
+          if(!val) return NS.showToast('No template', 'error');
+          NS.copyToClipboard(val);
+        });
+        applyBtn.addEventListener('click', ()=> {
+          const t = bar.dataset.lastTemplates ? JSON.parse(bar.dataset.lastTemplates) : [];
+          if(!t || t.length===0) return alert('No template — pick an element first');
+          const table = document.getElementById('locList') || document.getElementById('locator-list');
+          if(!table) return alert('Cannot find locator table');
+          const rows = table.querySelectorAll('tbody tr') || table.querySelectorAll('.loc-row');
+          let count = 0;
+          rows.forEach((tr, i) => {
+            const cb = tr.querySelector('.loc-check') || tr.querySelector('input[type="checkbox"]');
+            if(cb && cb.checked){
+              const div = tr.querySelector('.loc-val > div') || tr.querySelector('.mono') || tr.querySelector('.loc-value');
+              if(div) { div.textContent = t[0]; count++; }
+            }
+          });
+          NS.showToast(`Applied to ${count} rows`);
+        });
+      }
+    }
+  } catch(e){ console.warn('dynamic picker init failed', e); }
+
+  NS.openDynamicPicker = openDynamicPicker;
+})();
+
+// ----------------------------- Phase 8: POM & ZIP generator -----------------------------
+(function(){
+  function _normLocs(locs){
+    return (locs||[]).map((l,i)=>{
+      if(typeof l === 'string') return { name: `elem${i+1}`, xpath: l };
+      const name = l.name || l.fieldName || (l.text? l.text.replace(/\s+/g,'_').slice(0,20) : `elem${i+1}`);
+      const xpath = l.xpath || (l.xpaths && (l.xpaths.sf || l.xpaths.basic)) || l.css || `//*[@id='${name}']`;
+      return { name: name.replace(/[^A-Za-z0-9_]/g,'_'), xpath };
+    });
+  }
+
+  NS.buildArtifactsFiles = function(options){
+    options = options || {};
+    const fw = (options.fw||'selenium').toLowerCase();
+    const lang = (options.lang||'java').toLowerCase();
+    const locs = _normLocs(options.locs || window.CURRENT_LOCATORS || []).slice(0,40);
+    const files = {};
+    files['README.md'] = '# Generated by Adhyan Offline Studio';
+    if(fw === 'selenium' && lang === 'java'){
+      const fields = locs.map((l,i)=> `    @FindBy(xpath = "${l.xpath.replace(/"/g,'\\"')}")\n    private WebElement ${l.name};`).join('\n\n');
+      const methods = locs.map((l,i)=> {
+        const cap = l.name.charAt(0).toUpperCase()+l.name.slice(1);
+        return `    public void click${cap}(){ ${l.name}.click(); }\n    public void sendKeys${cap}(String v){ ${l.name}.clear(); ${l.name}.sendKeys(v); }`;
+      }).join('\n\n');
+      files['src/main/java/com/pageobjects/SamplePage.java'] =
+`package com.pageobjects;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.FindBy;
+import org.openqa.selenium.support.PageFactory;
+
+public class SamplePage {
+    WebDriver driver;
+
+${fields}
+
+    public SamplePage(WebDriver driver){
+        this.driver = driver;
+        PageFactory.initElements(driver, this);
+    }
+
+${methods}
+}
+`;
+      return files;
+    }
+    if(fw === 'playwright'){
+      files['package.json'] = JSON.stringify({ name:'adhyan-pw', devDependencies:{"@playwright/test":"latest"} }, null, 2);
+      files['tests/sample.spec.js'] = `const { test } = require('@playwright/test'); test('sample', async({ page }) => { await page.goto('https://example.com'); /* update selectors */ });`;
+      return files;
+    }
+    files['README.txt'] = 'No builder for selected combo yet.';
+    return files;
+  };
+
+  NS.downloadZipFromFiles = async function(map, zipName){
+    if(!window.JSZip) { NS.showToast('JSZip missing', 'error'); return; }
+    const zip = new JSZip();
+    Object.keys(map).forEach(p => zip.file(p, map[p]));
+    const blob = await zip.generateAsync({ type:'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = zipName || 'adhyan-artifacts.zip'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=> URL.revokeObjectURL(url), 1000);
+  };
+
+  document.getElementById('btnGenPOM')?.addEventListener('click', async ()=>{
+    const fw = document.querySelector('.sw[data-fw].active')?.dataset?.fw || 'selenium';
+    const lang = document.querySelector('.sw[data-lang].active')?.dataset?.lang || 'java';
+    const runner = document.querySelector('.sw[data-runner].active')?.dataset?.runner || 'testng';
+    const files = NS.buildArtifactsFiles({ fw, lang, runner, locs: window.CURRENT_LOCATORS || [] });
+    const out = document.getElementById('output');
+    if(out){
+      out.value = Object.keys(files).map(k=>`// ==== ${k} ====\n${files[k]}\n\n`).join('\n');
+    }
+    await NS.downloadZipFromFiles(files, `adhyan-${fw}-${lang}-${runner}.zip`);
+    NS.showToast('POM ZIP generated');
+  });
+})();
+
+// ----------------------------- Phase 9: Init & wiring -----------------------------
+(function(){
+  async function renderPreviewFromPaste(){
+    try {
+      const paste = document.getElementById('pasteBox') || document.querySelector('textarea.ed');
+      const html = paste && paste.value ? paste.value : (NS.CURRENT_HTML || '');
+      const preview = document.getElementById('preview');
+      if(preview && preview.tagName && preview.tagName.toLowerCase()==='iframe'){
+        let srcdoc = html || '<!doctype html><meta charset="utf-8"><body><h3>No content</h3></body>';
+        try { srcdoc = srcdoc.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, ''); } catch(e){}
+        try { preview.srcdoc = srcdoc; } catch(e){ NS.showToast('Unable to set iframe srcdoc', 'warn'); }
+      }
+      try { const parser = new DOMParser(); window._PARSER_DOC = parser.parseFromString(html,'text/html'); } catch(e){}
+      setTimeout(()=> { try { NS.extractAllLocators && NS.extractAllLocators(); } catch(e){} }, 320);
+      NS.showToast('Preview rendered');
+    } catch(e){ NS.showToast('Render failed', 'error'); console.error(e); }
+  }
+
+  // safe wiring for buttons & file input
+  document.getElementById('btnRender')?.addEventListener('click', renderPreviewFromPaste);
+  document.getElementById('btnOpenFile')?.addEventListener('click', ()=> document.getElementById('hiddenFile')?.click());
+  document.getElementById('hiddenFile')?.addEventListener('change', (ev)=>{
+    const f = ev.target.files && ev.target.files[0]; if(!f) return;
+    const reader = new FileReader();
+    reader.onload = function(e){ const paste = document.getElementById('pasteBox'); if(paste) paste.value = e.target.result; renderPreviewFromPaste(); };
+    reader.readAsText(f);
+  });
+
+  // initial fill (safe)
+  try { NS.fillLocatorList && NS.fillLocatorList('basic'); } catch(e){}
+  // ensure toolbar visible if possible (non-throwing)
+  try { NS.showLocatorToolbar && NS.showLocatorToolbar(); } catch(e){ console.debug('showLocatorToolbar failed'); }
+
+  window.AdhyPatch = NS;
+  console.info('AdhyPatch merged script loaded. Version:', NS.version);
+})();
+</script>
+   
+
+<!-- Load your main script AFTER the DOM: keep your existing filename here -->
+<!-- <script src="offlineXpath.js"> -->
+</body>
+</html>
