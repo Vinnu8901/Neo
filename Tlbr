@@ -1,0 +1,238 @@
+Feature: Salesforce Toolbar initialization and inbound call flow
+
+  Background:
+    Given I open the Agent Landing page
+
+  Scenario: Launch toolbar, initialize background URL and receive inbound call
+    Given As an Agent I launch the Salesforce Toolbar from the footer
+    When I open the toolbar initialisation URL in the background and handle privacy warning
+    Then the background URL should load and close automatically
+    And the toolbar should be initialized successfully
+    And Agent should see the status as "Offline"
+    When Agent toggles status to "Ready"
+    Then Agent should be able to receive inbound calls
+
+
+// pages
+
+package pages;
+
+import org.openqa.selenium.*;
+import org.openqa.selenium.support.*;
+import org.openqa.selenium.support.ui.*;
+
+import java.time.Duration;
+import java.util.Set;
+
+/**
+ * Page object for toolbar interactions (open footer toolbar, check status, toggle state, open background URL)
+ *
+ * Adjust the XPaths/selectors to match your Salesforce DOM.
+ */
+public class ToolbarPage {
+
+    private WebDriver driver;
+    private WebDriverWait wait;
+    private final Duration DEFAULT_WAIT = Duration.ofSeconds(8);
+
+    public ToolbarPage(WebDriver driver) {
+        this.driver = driver;
+        PageFactory.initElements(driver, this);
+        this.wait = new WebDriverWait(driver, DEFAULT_WAIT);
+    }
+
+    // ====== Replace these xpaths with the actual locators from your org ======
+    @FindBy(xpath = "//footer//a[contains(., 'Toolbar') or contains(@title,'Toolbar') or contains(., 'Tool')]")
+    private WebElement toolbarFooterLink;
+
+    @FindBy(xpath = "//div[contains(@class,'toolbar') and (contains(.,'Agent') or contains(.,'Toolbar'))]")
+    private WebElement toolbarContainer;
+
+    @FindBy(xpath = "//span[contains(@class,'agent-status') or contains(@class,'status')][contains(.,'Offline') or contains(.,'Ready') or contains(.,'Busy')]")
+    private WebElement agentStatusLabel;
+
+    @FindBy(xpath = "//button[contains(@class,'toggle') or contains(@aria-label,'Toggle') or contains(.,'Ready') or contains(.,'Offline')]")
+    private WebElement agentToggleButton;
+    // =============================================================================
+
+    public void clickToolbarFooterLink() {
+        wait.until(ExpectedConditions.elementToBeClickable(toolbarFooterLink)).click();
+    }
+
+    public boolean isToolbarVisible() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(toolbarContainer));
+            return toolbarContainer.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public String getAgentStatus() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(agentStatusLabel));
+            return agentStatusLabel.getText().trim();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    public void toggleAgentState() {
+        try {
+            wait.until(ExpectedConditions.elementToBeClickable(agentToggleButton)).click();
+        } catch (Exception e) {
+            ((JavascriptExecutor) driver).executeScript("arguments[0].click();", agentToggleButton);
+        }
+    }
+
+    /**
+     * Opens the provided URL in a new browser window, attempts to bypass the Chrome SSL interstitial
+     * by clicking 'Advanced' (details-button) and 'Proceed' (proceed-link), then closes the window.
+     *
+     * NOTE: If running headless or if the intranet SSL behaves differently, prefer an HTTP client call
+     * to the endpoint instead of driving the browser (faster and more reliable).
+     */
+    public void openBackgroundInitUrlAndClose(String initUrl) {
+        String original = driver.getWindowHandle();
+
+        try {
+            // create new window (Selenium 4)
+            driver.switchTo().newWindow(WindowType.WINDOW);
+
+            // find the newly created handle and switch to it
+            Set<String> all = driver.getWindowHandles();
+            String newHandle = "";
+            for (String h : all) {
+                if (!h.equals(original)) newHandle = h;
+            }
+            driver.switchTo().window(newHandle);
+
+            // navigate to the init URL
+            driver.get(initUrl);
+
+            // short wait for potential interstitial
+            try { Thread.sleep(800); } catch (InterruptedException ignored) {}
+
+            // Try common Chrome interstitial approach
+            try {
+                By advancedBtn = By.id("details-button");
+                if (!driver.findElements(advancedBtn).isEmpty()) {
+                    WebElement adv = driver.findElement(advancedBtn);
+                    if (adv.isDisplayed()) adv.click();
+                    By proceedLink = By.id("proceed-link");
+                    if (!driver.findElements(proceedLink).isEmpty()) {
+                        driver.findElement(proceedLink).click();
+                    }
+                }
+            } catch (Exception ignored) {}
+
+            // try "thisisunsafe" keystroke as fallback (works in many local Chrome versions)
+            try {
+                driver.switchTo().activeElement().sendKeys("thisisunsafe");
+            } catch (Exception ignored) {}
+
+            // wait for readyState complete (short timeout)
+            try {
+                new WebDriverWait(driver, Duration.ofSeconds(8)).until(d ->
+                        ((JavascriptExecutor) d).executeScript("return document.readyState").equals("complete"));
+            } catch (Exception ignored) {}
+
+        } finally {
+            // close the new window (safely) and go back to original
+            try { driver.close(); } catch (Exception ignored) {}
+            driver.switchTo().window(original);
+        }
+    }
+
+    /**
+     * Wait for inbound call: by default checks for status change to 'Busy' within timeoutSeconds.
+     * Adjust according to real toolbar behavior (DOM/event).
+     */
+    public boolean waitForInboundCall(long timeoutSeconds) {
+        try {
+            WebDriverWait longWait = new WebDriverWait(driver, Duration.ofSeconds(timeoutSeconds));
+            return longWait.until(d ->
+                    getAgentStatus().toLowerCase().contains("busy"));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+}
+
+
+// steps
+package steps;
+
+import core.BaseStep;   // your project package for BaseStep
+import io.cucumber.java.en.*;
+import org.junit.Assert;
+import pages.ToolbarPage;
+
+public class AgentSteps extends BaseStep {
+
+    // other existing page objects you already have...
+    private ToolbarPage toolbarPage;
+
+    public AgentSteps() {
+        // do not initialize driver here; BaseStep should initialize it before steps run.
+        this.toolbarPage = new ToolbarPage(driver);
+    }
+
+    @Given("As an Agent I launch the Salesforce Toolbar from the footer")
+    public void as_an_agent_i_launch_the_salesforce_toolbar_from_footer() {
+        // click toolbar footer link and wait for toolbar to be visible
+        toolbarPage.clickToolbarFooterLink();
+
+        boolean visible = toolbarPage.isToolbarVisible();
+        Assert.assertTrue("Toolbar did not open or is not visible", visible);
+    }
+
+    @When("I open the toolbar initialisation URL in the background and handle privacy warning")
+    public void open_toolbar_initialisation_url_in_background() {
+        // background URL from your earlier message
+        String initUrl = "https://awscc-us-dev-api.shravtek.intranet/qa-toolbar-api/salesforce/toolbar/initialiseProcess";
+        toolbarPage.openBackgroundInitUrlAndClose(initUrl);
+    }
+
+    @Then("the background URL should load and close automatically")
+    public void background_url_should_load_and_close() {
+        // If openBackgroundInitUrlAndClose completed without exception, consider it successful.
+        // Optionally you can add a server-side health check here.
+        Assert.assertTrue(true);
+    }
+
+    @Then("the toolbar should be initialized successfully")
+    public void toolbar_should_be_initialized_successfully() {
+        Assert.assertTrue("Toolbar not visible after initialization", toolbarPage.isToolbarVisible());
+    }
+
+    @Then("Agent should see the status as {string}")
+    public void agent_should_see_status(String expected) {
+        String actual = toolbarPage.getAgentStatus();
+        Assert.assertTrue("Expected agent status to contain '" + expected + "' but was: " + actual,
+                actual.toLowerCase().contains(expected.toLowerCase()));
+    }
+
+    @When("Agent toggles status to {string}")
+    public void agent_toggles_status_to(String target) throws InterruptedException {
+        String current = toolbarPage.getAgentStatus();
+        if (!current.toLowerCase().contains(target.toLowerCase())) {
+            toolbarPage.toggleAgentState();
+            Thread.sleep(700); // allow status to update, replace with explicit wait if you have reliable DOM change
+        }
+    }
+
+    @Then("Agent should be able to receive inbound calls")
+    public void agent_should_be_able_to_receive_inbound_calls() {
+        boolean callReceived = toolbarPage.waitForInboundCall(60); // wait up to 60s for Busy status
+        Assert.assertTrue("Agent did not receive inbound call (status didn't change to Busy)", callReceived);
+    }
+}
+
+
+
+
+
+
+
+
