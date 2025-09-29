@@ -1,3 +1,38 @@
+(function mockInboundWhenConnectIsHere(){
+  if (!window.connect || typeof connect.agent !== 'function') {
+    return console.warn('Streams not available in this frame. Use 3B.');
+  }
+
+  const agent = connect.agent();
+  const listeners = { connecting:[], connected:[], accepted:[], ended:[] };
+  const fake = {
+    getContactId: ()=>'MOCK-1',
+    getType: ()=>'VOICE',
+    getStatus: () => ({ type:'incoming' }),
+    getAttributes: () => ({ ANI:{ name:'ANI', value:'+15550100' }, CustomerName:{ name:'CustomerName', value:'Jane Doe' } }),
+    onConnecting: cb=>listeners.connecting.push(cb),
+    onConnected:  cb=>listeners.connected.push(cb),
+    onAccepted:   cb=>listeners.accepted.push(cb),
+    onEnded:      cb=>listeners.ended.push(cb),
+    accept: (ok,fail)=>{ try{ listeners.accepted.forEach(f=>f(fake)); ok&&ok(); }catch(e){ fail&&fail(e);} }
+  };
+
+  // Fire your app’s onContact handlers
+  agent.onContact && agent.onContact(cb => { try{ cb(fake); }catch(e){ console.error(e); }});
+
+  // Drive lifecycle (what most apps listen for)
+  setTimeout(()=>listeners.connecting.forEach(f=>f(fake)),100);
+  setTimeout(()=>listeners.connected.forEach(f=>f(fake)),400);
+
+  // Optional: auto-end later
+  // setTimeout(()=>listeners.ended.forEach(f=>f(fake)), 6000);
+
+  window.__mockContact__ = fake;
+  console.log('Mock Streams contact fired; available as __mockContact__.');
+})();
+
+
+
 // Try to grab your launcher shell/LWC root
 const cmp = document.querySelector('c-questionnaire-launcher, c-telephony-shell, c-your-component');
 
