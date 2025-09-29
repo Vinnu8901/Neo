@@ -1,3 +1,20 @@
+// Try to grab your launcher shell/LWC root
+const cmp = document.querySelector('c-questionnaire-launcher, c-telephony-shell, c-your-component');
+
+if (cmp) {
+  cmp.dispatchEvent(new CustomEvent('openquestionnaire', {
+    bubbles: true,
+    composed: true,               // ← REQUIRED to escape shadow DOM
+    detail: { contactId: 'MOCK-1', ani: '+15550100', name: 'Jane Doe' }
+  }));
+  console.log('LWC event dispatched.');
+} else {
+  console.warn('Launcher component not found. Inspect and update the selector.');
+}
+
+
+
+
 (function mockInboundCall(){
   if (!window.connect || typeof connect.agent !== 'function') {
     console.warn('[MockInbound] Amazon Connect Streams not detected on this page.');
