@@ -1,3 +1,84 @@
+(function mockInboundCall(){
+  if (!window.connect || typeof connect.agent !== 'function') {
+    console.warn('[MockInbound] Amazon Connect Streams not detected on this page.');
+    return;
+  }
+
+  // Grab the singleton Agent object
+  const agent = connect.agent();
+  if (!agent) { console.warn('[MockInbound] connect.agent() returned null'); return; }
+
+  // --- Capture onContact handlers that your code registered ---
+  // We monkey-patch once; subsequent registrations will also get stored.
+  const STORE = (window.__MOCK_INBOUND_STORE__ = window.__MOCK_INBOUND_STORE__ || {
+    contactHandlers: [],
+    patched: false
+  });
+
+  if (!STORE.patched) {
+    const origOnContact = agent.onContact.bind(agent);
+    agent.onContact = (cb) => {
+      if (typeof cb === 'function') STORE.contactHandlers.push(cb);
+      // still register with real Streams, in case a real call arrives later
+      try { origOnContact(cb); } catch(_){}
+    };
+    STORE.patched = true;
+    console.info('[MockInbound] Patched agent.onContact to capture handlers.');
+  }
+
+  // --- Build a minimal fake Contact object that looks like Streams contact ---
+  const now = Date.now();
+  const fakeContactId = 'mock-' + now;
+  const listeners = { connecting: [], connected: [], accepted: [], ended: [] };
+
+  const fakeContact = {
+    // Required IDs / metadata commonly used
+    getContactId: () => fakeContactId,
+    getType: () => 'VOICE',
+    getStatus: () => ({ type: 'incoming', duration: 0 }),
+    getQueue: () => ({ name: 'MockQueue', queueARN: 'arn:aws:connect:mock:queue' }),
+    getAttributes: () => ({
+      CustomerName:   { name: 'CustomerName', value: 'Jane Doe' },
+      CustomerNumber: { name: 'CustomerNumber', value: '+1 555-0100' }
+    }),
+    getInitialConnection: () => ({
+      getEndpoint: () => ({ endpointARN: 'arn:aws:connect:mock:endpoint', address: '+1 555-0100' }),
+      getState: () => ({ type: 'incoming' })
+    }),
+    // Event registration stubs
+    onConnecting: (cb) => { if (typeof cb === 'function') listeners.connecting.push(cb); },
+    onConnected:  (cb) => { if (typeof cb === 'function') listeners.connected.push(cb); },
+    onAccepted:   (cb) => { if (typeof cb === 'function') listeners.accepted.push(cb); },
+    onEnded:      (cb) => { if (typeof cb === 'function') listeners.ended.push(cb); },
+
+    // Actions you might call in your code
+    accept: (success, fail) => { try { listeners.accepted.forEach(fn => fn(fakeContact)); success && success(); } catch(e){ fail && fail(e); } },
+    reject: (success, fail) => { try { listeners.ended.forEach(fn => fn(fakeContact));   success && success(); } catch(e){ fail && fail(e); } },
+
+    // For logging
+    toString: () => `[FakeContact ${fakeContactId}]`
+  };
+
+  // --- Trigger all stored onContact handlers with our fake contact
+  console.info('[MockInbound] Firing onContact with fake contact', fakeContactId);
+  STORE.contactHandlers.forEach(fn => {
+    try { fn(fakeContact); } catch(e){ console.error('[MockInbound] Handler error:', e); }
+  });
+
+  // --- Drive the fake contact lifecycle (connecting → connected) ---
+  setTimeout(() => { listeners.connecting.forEach(fn => fn(fakeContact)); }, 100);
+  setTimeout(() => { listeners.connected.forEach(fn => fn(fakeContact));  }, 400);
+
+  // Optional: auto-end after N seconds so your code sees an end event
+  // setTimeout(() => { listeners.ended.forEach(fn => fn(fakeContact)); }, 8000);
+
+  // Expose for manual testing from console:
+  window.__mockContact__ = fakeContact;
+  console.warn('[MockInbound] Fake contact available as window.__mockContact__');
+})();
+
+
+
 
 
 <!DOCTYPE html>
