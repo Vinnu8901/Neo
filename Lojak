@@ -1,3 +1,867 @@
+/* offlineXpath.js
+   Adhyan Offline — merged script (Preview-first, Interactive Custom tab, POM preview)
+   Replace your existing offlineXpath.js with this file.
+*/
+(function(){
+
+  // Namespace
+  window.AdhyPatch = window.AdhyPatch || {};
+  const NS = window.AdhyPatch;
+
+  // ---------- Phase 1: State ----------
+  NS.version = NS.version || 'adhy-offline-3.1';
+  NS.CURRENT_HTML = NS.CURRENT_HTML || '';
+  NS.CURRENT_LOCATORS = NS.CURRENT_LOCATORS || [];        // list of extracted items
+  NS.CURRENT_CUSTOM = NS.CURRENT_CUSTOM || [];            // list of clicked items appended to Custom
+  NS.POM_CACHE = NS.POM_CACHE || { pom: '', steps: '' };
+
+  // ---------- Phase 2: Utilities ----------
+  (function(){
+    NS.$ = NS.$ || function(sel, root=document){ try { return (root || document).querySelector(sel); } catch(e){ return null; } };
+    NS.$$ = NS.$$ || function(sel, root=document){ try { return Array.from((root || document).querySelectorAll(sel)); } catch(e){ return []; } };
+
+    NS.showToast = NS.showToast || function(msg, type='info'){
+      try {
+        let t = document.getElementById('__adhy_toast');
+        if(!t){
+          t = document.createElement('div');
+          t.id = '__adhy_toast';
+          t.style.cssText = 'position:fixed;right:16px;bottom:16px;padding:8px 12px;border-radius:8px;background:rgba(0,0,0,0.78);color:#fff;z-index:2147483647;font-family:system-ui,Arial';
+          document.body.appendChild(t);
+        }
+        t.textContent = msg;
+        t.style.background = (type==='error')? '#b91c1c' : (type==='success')? '#047857' : 'rgba(0,0,0,0.78)';
+        t.style.opacity = '1';
+        clearTimeout(t._t);
+        t._t = setTimeout(()=>{ t.style.opacity='0'; }, 1500);
+      } catch(e){ console.log(msg); }
+    };
+
+    NS.copyToClipboard = NS.copyToClipboard || async function(text){
+      try {
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          await navigator.clipboard.writeText(text);
+          NS.showToast('Copied', 'success');
+          return true;
+        }
+      } catch(e){}
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.position='fixed'; ta.style.left='-9999px';
+        document.body.appendChild(ta); ta.select();
+        document.execCommand && document.execCommand('copy');
+        ta.remove();
+        NS.showToast('Copied (fallback)', 'success');
+        return true;
+      } catch(e){
+        NS.showToast('Copy failed', 'error');
+        return false;
+      }
+    };
+
+    NS.escapeHtml = NS.escapeHtml || function(s){ return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+
+    NS.xpathLiteral = NS.xpathLiteral || function(s){
+      s = String(s||'');
+      if (s.indexOf('"') === -1) return `"${s}"`;
+      if (s.indexOf("'") === -1) return `'${s}'`;
+      const parts = s.split('"'), out=[];
+      for(let i=0;i<parts.length;i++){
+        if(parts[i] !== '') out.push(`"${parts[i].replace(/\\/g,'\\\\')}"`);
+        if(i < parts.length-1) out.push(`'"'`);
+      }
+      return `concat(${out.join(',')})`;
+    };
+
+    NS.cssSelectorFor = NS.cssSelectorFor || function(el){
+      if(!el || !el.tagName) return '';
+      if(el.id){
+        try { return `#${CSS.escape(el.id)}`; } catch(e){ return '#'+el.id; }
+      }
+      let sel = el.tagName.toLowerCase();
+      try {
+        if(el.classList && el.classList.length){
+          sel += '.' + Array.from(el.classList).slice(0,3).map(c=>c.replace(/\s+/g,'')).join('.');
+        }
+        const name = el.getAttribute && el.getAttribute('name');
+        if(name) sel += `[name="${name}"]`;
+      } catch(e){}
+      return sel;
+    };
+
+  })();
+
+  // ---------- Phase 3: Preview helpers ----------
+  (function(){
+    const PREVIEW_SEL = ['#preview','iframe#preview','.preview','iframe.preview'];
+
+    function getPreviewElement(){
+      for(const s of PREVIEW_SEL){
+        try {
+          const el = document.querySelector(s);
+          if(el) return el;
+        } catch(e){}
+      }
+      try { return document.querySelector('iframe'); } catch(e){ return null; }
+    }
+
+    function getPreviewDocument(){
+      const el = getPreviewElement();
+      if(!el) return window._PARSER_DOC || document;
+      if(el.tagName && el.tagName.toLowerCase()==='iframe'){
+        try { if(el.contentDocument) return el.contentDocument; } catch(e){}
+        if(el.srcdoc) try { return (new DOMParser()).parseFromString(el.srcdoc,'text/html'); } catch(e){}
+      }
+      try {
+        if(el.querySelector){
+          const inner = el.querySelector('iframe');
+          if(inner && inner.contentDocument) return inner.contentDocument;
+        }
+      } catch(e){}
+      return window._PARSER_DOC || document;
+    }
+
+    window.getPreviewElement = getPreviewElement;
+    window.getPreviewDocument = getPreviewDocument;
+    NS.getPreviewElement = getPreviewElement;
+    NS.getPreviewDocument = getPreviewDocument;
+  })();
+
+  // ---------- Phase 4: Iframe / Shadow traversal & highlight ----------
+  (function(){
+    function evaluateXPath(doc, xpath){
+      try { return doc.evaluate(xpath, doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue; } catch(e){ return null; }
+    }
+
+    function findInShadowRoots(xpath, root){
+      try {
+        const direct = evaluateXPath(root, xpath);
+        if(direct) return direct;
+      } catch(e){}
+      try {
+        const walker = root.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+        let node = walker.nextNode();
+        while(node){
+          if(node.shadowRoot){
+            const found = findInShadowRoots(xpath, node.shadowRoot);
+            if(found) return found;
+          }
+          node = walker.nextNode();
+        }
+      } catch(e){}
+      return null;
+    }
+
+    function findInIframes(xpath, win){
+      win = win || window;
+      try {
+        const doc = win.document;
+        const d = evaluateXPath(doc, xpath);
+        if(d) return { el: d, win };
+        const s = findInShadowRoots(xpath, doc);
+        if(s) return { el: s, win };
+        const frames = doc.querySelectorAll ? Array.from(doc.querySelectorAll('iframe,frame')) : [];
+        for(let i=0;i<frames.length;i++){
+          const fr = frames[i];
+          try {
+            if(!fr.contentWindow) continue;
+            const res = findInIframes(xpath, fr.contentWindow);
+            if(res && res.el) return res;
+          } catch(e){ /* cross-origin */ }
+        }
+      } catch(e){}
+      return null;
+    }
+
+    function transientHighlightElement(el, opts){
+      if(!el || !el.style) return;
+      opts = opts || {};
+      const color = opts.color || 'rgba(124,92,255,0.45)';
+      const orig = { outline: el.style.outline || '', boxShadow: el.style.boxShadow || '', zIndex: el.style.zIndex || '' };
+      try { el.style.outline = `3px solid ${color}`; el.style.boxShadow = `0 0 0 4px ${color}`; el.style.zIndex = 2147483647; el.scrollIntoView({behavior:'auto', block:'center'}); } catch(e){}
+      setTimeout(()=>{ try { el.style.outline = orig.outline; el.style.boxShadow = orig.boxShadow; el.style.zIndex = orig.zIndex; } catch(e){} }, opts.duration || 1800);
+    }
+
+    NS.findInIframes = findInIframes;
+    NS.transientHighlightElement = transientHighlightElement;
+
+    NS.tryHighlightByXPath = function(xpath){
+      if(!xpath) return false;
+      try {
+        const docFound = evaluateXPath(document, xpath);
+        if(docFound){ transientHighlightElement(docFound, {color:'rgba(255,165,0,0.6)'}); return true; }
+      } catch(e){}
+      try {
+        const previewEl = NS.getPreviewElement && NS.getPreviewElement();
+        if(previewEl && previewEl.tagName && previewEl.tagName.toLowerCase()==='iframe'){
+          try {
+            const pd = previewEl.contentDocument;
+            if(pd){
+              const pfound = evaluateXPath(pd, xpath) || findInShadowRoots(xpath, pd);
+              if(pfound){ transientHighlightElement(pfound, {color:'rgba(0,150,255,0.45)'}); return true; }
+            }
+          } catch(err){}
+        }
+      } catch(e){}
+      try {
+        const res = findInIframes(xpath, window);
+        if(res && res.el){ transientHighlightElement(res.el, {color:'rgba(0,150,255,0.45)'}); return true; }
+      } catch(e){}
+      return false;
+    };
+  })();
+
+  // ---------- Phase 5: Locator generation strategies ----------
+  (function(){
+    function safeAttr(el, name){ try { return el.getAttribute ? el.getAttribute(name) : null; } catch(e){ return null; } }
+    function getLabelFor(el){
+      try {
+        if(!el) return '';
+        const id = el.id;
+        if(id){
+          try { const l = document.querySelector && document.querySelector(`label[for="${id}"]`); if(l) return l.textContent.trim(); } catch(e){}
+        }
+        if(el.closest){
+          const parentLabel = el.closest('label'); if(parentLabel) return parentLabel.textContent.trim();
+        }
+        const txt = (el.innerText || el.textContent || '').trim();
+        if(txt) return txt.slice(0,120);
+        const placeholder = safeAttr(el,'placeholder'); if(placeholder) return placeholder;
+        return '';
+      } catch(e){ return ''; }
+    }
+
+    function genBasicXPath(el){
+      if(!el) return '';
+      if(el.id) return `//*[@id=${NS.xpathLiteral(el.id)}]`;
+      const tag = el.tagName.toLowerCase();
+      const name = safeAttr(el,'name');
+      if(name) return `//${tag}[@name=${NS.xpathLiteral(name)}]`;
+      const label = getLabelFor(el);
+      if(label) return `//${tag}[contains(normalize-space(.), ${NS.xpathLiteral(label)})]`;
+      // fallback: limited absolute
+      const parts = [];
+      let cur = el; let depth=0;
+      while(cur && cur.nodeType===1 && depth<8){
+        const t = cur.tagName.toLowerCase();
+        let ix = 1; let sib = cur.previousElementSibling;
+        while(sib){ if(sib.tagName === cur.tagName) ix++; sib = sib.previousElementSibling; }
+        parts.unshift(`${t}${ix>1?`[${ix}]`:''}`);
+        cur = cur.parentElement; depth++;
+      }
+      return '//' + parts.join('/');
+    }
+
+    function genWildcardXPath(el){
+      if(!el) return '';
+      if(el.id) return `//*[@id=${NS.xpathLiteral(el.id)}]`;
+      const label = getLabelFor(el);
+      if(label) return `//*[contains(normalize-space(.), ${NS.xpathLiteral(label)})]`;
+      const name = safeAttr(el,'name'); if(name) return `//*[contains(@name, ${NS.xpathLiteral(name)})]`;
+      const cls = (safeAttr(el,'class')||'').split(/\s+/).filter(Boolean)[0];
+      if(cls) return `//*[contains(concat(' ', normalize-space(@class), ' '), ${NS.xpathLiteral(' '+cls+' ')})]`;
+      return genBasicXPath(el);
+    }
+
+    function genAxesXPath(el){
+      if(!el) return genBasicXPath(el);
+      const tag = el.tagName.toLowerCase();
+      const id = el.id;
+      if(id) return `//label[@for=${NS.xpathLiteral(id)}]/following::${tag}[1]`;
+      const label = getLabelFor(el);
+      if(label) return `//label[contains(normalize-space(.), ${NS.xpathLiteral(label)})]/following::${tag}[1]`;
+      return genBasicXPath(el);
+    }
+
+    function genFunctionXPath(el){
+      if(!el) return genBasicXPath(el);
+      const tag = el.tagName.toLowerCase();
+      const placeholder = safeAttr(el,'placeholder'); if(placeholder) return `//${tag}[contains(@placeholder, ${NS.xpathLiteral(placeholder)})]`;
+      const title = safeAttr(el,'title'); if(title) return `//${tag}[contains(@title, ${NS.xpathLiteral(title)})]`;
+      const aria = safeAttr(el,'aria-label'); if(aria) return `//${tag}[@aria-label=${NS.xpathLiteral(aria)}]`;
+      return genBasicXPath(el);
+    }
+
+    function genSalesforceXPath(el){
+      if(!el) return '';
+      const tag = el.tagName.toLowerCase();
+      if(safeAttr(el,'data-qa-locator')) return `//${tag}[@data-qa-locator=${NS.xpathLiteral(safeAttr(el,'data-qa-locator'))}]`;
+      if(safeAttr(el,'data-id')) return `//${tag}[@data-id=${NS.xpathLiteral(safeAttr(el,'data-id'))}]`;
+      if(safeAttr(el,'data-aura-rendered-by')) return `//${tag}[@data-aura-rendered-by=${NS.xpathLiteral(safeAttr(el,'data-aura-rendered-by'))}]`;
+      return '';
+    }
+
+    function genPegaXPath(el){
+      if(!el) return '';
+      const tag = el.tagName.toLowerCase();
+      if(safeAttr(el,'data-test-id')) return `//${tag}[@data-test-id=${NS.xpathLiteral(safeAttr(el,'data-test-id'))}]`;
+      if(safeAttr(el,'data-ctl')) return `//${tag}[@data-ctl=${NS.xpathLiteral(safeAttr(el,'data-ctl'))}]`;
+      return '';
+    }
+
+    NS.genBasicXPath = genBasicXPath;
+    NS.genWildcardXPath = genWildcardXPath;
+    NS.genAxesXPath = genAxesXPath;
+    NS.genFunctionXPath = genFunctionXPath;
+    NS.genSalesforceXPath = genSalesforceXPath;
+    NS.genPegaXPath = genPegaXPath;
+
+    NS.generateLocatorsForElement = function(el){
+      if(!el) return null;
+      return {
+        tag: el.tagName.toLowerCase(),
+        id: el.id || '',
+        text: getLabelFor(el) || '',
+        xpaths: {
+          basic: genBasicXPath(el),
+          wildcards: genWildcardXPath(el),
+          axes: genAxesXPath(el),
+          functions: genFunctionXPath(el),
+          salesforce: genSalesforceXPath(el),
+          pega: genPegaXPath(el)
+        },
+        css: NS.cssSelectorFor(el),
+        elementRef: el
+      };
+    };
+
+  })();
+
+  // ---------- Phase 6: Extraction & UI fill ----------
+  (function(){
+
+    function shouldSkip(el){
+      try {
+        if(!el || el.nodeType !== 1) return true;
+        if(el.hasAttribute && el.hasAttribute('hidden')) return true;
+        const s = (el.getAttribute && el.getAttribute('style') || '').toLowerCase();
+        if(s && (/display\s*:\s*none|visibility\s*:\s*hidden/).test(s)) return true;
+        if(el.tagName && el.tagName.toLowerCase()==='script') return true;
+        if(el.tagName && el.tagName.toLowerCase()==='a' && (!el.hasAttribute('href') || el.getAttribute('href')==='')) return true;
+      } catch(e){ return true; }
+      return false;
+    }
+
+    function collectCandidateElements(doc){
+      doc = doc || document;
+      const selectors = ['input:not([type=hidden])','button','a[href]','select','textarea','[role="button"]','[data-qa-locator]','[data-test-id]','[data-ctl]','lightning-input','lightning-button'];
+      let list = [];
+      try { list = Array.from(doc.querySelectorAll(selectors.join(','))); } catch(e){ list = []; }
+      list = list.filter(el => !shouldSkip(el));
+      const seen = new Set(); const out = [];
+      list.forEach(el=>{
+        try {
+          const sig = [el.tagName.toLowerCase(), el.id||'', el.getAttribute && el.getAttribute('name')||'', (el.textContent||'').trim().slice(0,60)].join('|');
+          if(seen.has(sig)) return; seen.add(sig); out.push(el);
+        } catch(e){}
+      });
+      return out;
+    }
+
+    NS.extractAllLocators = function(opts){
+      opts = opts || {};
+      let DOC = document;
+      const previewEl = NS.getPreviewElement && NS.getPreviewElement();
+      if(previewEl && previewEl.tagName && previewEl.tagName.toLowerCase()==='iframe' && !opts.forceParse){
+        try { if(previewEl.contentDocument) DOC = previewEl.contentDocument; } catch(e){ if(window._PARSER_DOC) DOC = window._PARSER_DOC; else { DOC = document; NS.showToast('Preview inaccessible — using parsed DOM','warn'); } }
+      } else if(window._PARSER_DOC){
+        DOC = window._PARSER_DOC;
+      }
+      const elements = collectCandidateElements(DOC);
+      const results = elements.map((el, idx)=>{ const loc = NS.generateLocatorsForElement(el); loc._srcIndex = idx; loc._id = loc.id || `E${idx+1}`; return loc; });
+      NS.CURRENT_LOCATORS = results;
+      try { NS.fillLocatorList && NS.fillLocatorList('basic'); } catch(e){ console.warn('fillLocatorList', e); }
+      NS.showToast(`Extracted ${results.length} elements`);
+      return results;
+    };
+
+    // Fill the visible locator list (used for Basic/Wildcards/etc)
+    NS.fillLocatorList = function(panel='basic'){
+      panel = panel || 'basic';
+      const container = NS.$('#locator-list');
+      if(!container){
+        console.warn('#locator-list not found'); return;
+      }
+
+      // We'll show a tabbed view: but main list goes into a child .list area
+      // Create or find #locList (visible area)
+      let listArea = NS.$('#locList');
+      if(!listArea){
+        listArea = document.createElement('div'); listArea.id = 'locList'; listArea.className = 'list';
+        container.innerHTML = ''; container.appendChild(listArea);
+      } else {
+        listArea.innerHTML = '';
+      }
+
+      const data = NS.CURRENT_LOCATORS || [];
+      if(!data.length){
+        listArea.innerHTML = '<div class="small">No locators. Paste/Render to populate.</div>'; return;
+      }
+
+      data.forEach((it, idx)=>{
+        const val = (it.xpaths && it.xpaths[panel]) || it.css || '';
+        const row = document.createElement('div'); row.className = 'loc-row';
+        row.style.display = 'flex'; row.style.justifyContent = 'space-between'; row.style.alignItems = 'center';
+        // left: label
+        const left = document.createElement('div'); left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
+        const badge = document.createElement('span'); badge.className='badge'; badge.textContent = it.tag || 'el';
+        const meta = document.createElement('div'); meta.style.minWidth='0';
+        meta.innerHTML = `<div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:220px">${NS.escapeHtml(it.text||'(no text)')}</div><div class="small" style="color:#6b7280">${NS.escapeHtml(it._id || '')}</div>`;
+        left.appendChild(badge); left.appendChild(meta);
+
+        // mid: value
+        const mid = document.createElement('div'); mid.className='mono'; mid.style.flex='1'; mid.style.margin='0 12px'; mid.style.whiteSpace='nowrap'; mid.style.overflow='hidden'; mid.style.textOverflow='ellipsis';
+        mid.textContent = val;
+
+        // actions
+        const actions = document.createElement('div'); actions.style.display='flex'; actions.style.gap='8px';
+        const btnCopy = document.createElement('button'); btnCopy.className='btn'; btnCopy.textContent='Copy';
+        const btnHi = document.createElement('button'); btnHi.className='btn'; btnHi.textContent='Highlight';
+        actions.appendChild(btnCopy); actions.appendChild(btnHi);
+
+        row.appendChild(left); row.appendChild(mid); row.appendChild(actions);
+
+        // Row click: copy + highlight + append to output + toggle selection behavior
+        row.addEventListener('click', async (e)=>{
+          if(e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON')) return;
+          const copyVal = mid.textContent || '';
+          if(!copyVal) return NS.showToast('No locator', 'error');
+          const ok = NS.tryHighlightByXPath(copyVal);
+          await NS.copyToClipboard(copyVal);
+          // Append snippet for this locator into output (non-destructive)
+          const out = NS.$('#output'); if(out){ out.value = (out.value? out.value + '\n\n' : '') + `// ${it._id} (${panel})\n${copyVal}`; }
+          NS.showToast(ok ? 'Copied & highlighted' : 'Copied');
+        });
+
+        btnCopy.addEventListener('click', async (ev)=>{ ev.stopPropagation(); const v = mid.textContent || ''; if(!v) return; await NS.copyToClipboard(v); });
+        btnHi.addEventListener('click', (ev)=>{ ev.stopPropagation(); const v = mid.textContent || ''; if(v) NS.tryHighlightByXPath(v); });
+
+        listArea.appendChild(row);
+      });
+
+    };
+
+  })();
+
+  // ---------- Phase 7: Interactive preview click → Custom tab ----------
+  (function(){
+
+    // When user clicks inside preview, generate locators for that element and append into CUSTOM list
+    async function previewClickHandler(e){
+      try {
+        e.preventDefault && e.preventDefault();
+        e.stopPropagation && e.stopPropagation();
+        const el = e.target;
+        if(!el || !el.tagName) return;
+        const loc = NS.generateLocatorsForElement(el);
+        if(!loc) { NS.showToast('Unable to compute locators', 'error'); return; }
+
+        // Build unique id
+        const uid = (loc.id && loc.id.length) ? loc.id : `C${Date.now().toString(36).slice(-6)}`;
+        loc._uid = uid;
+
+        // Append to CUSTOM array and to UI under "Custom" tab area
+        NS.CURRENT_CUSTOM = NS.CURRENT_CUSTOM || [];
+        NS.CURRENT_CUSTOM.push(loc);
+
+        // Ensure Custom tab exists; if not, create or activate a "custom" area by reusing #locList but with flag
+        // For simplicity we'll switch the visible tab to a "Custom view" inside locator-list area
+        showCustomTabAndItem(loc);
+
+        // Append snippet to output
+        const snippet = buildSnippetForElement(loc);
+        const out = NS.$('#output');
+        if(out) out.value = (out.value ? out.value + '\n\n' : '') + snippet;
+
+        NS.showToast('Captured element into Custom tab', 'success');
+      } catch(err){ console.error('previewClickHandler', err); NS.showToast('Capture failed','error'); }
+    }
+
+    function showCustomTabAndItem(loc){
+      // Mark the Custom tab active (if you have tab DOM). We will:
+      // - Set all .chip to inactive and create/activate a "custom" chip,
+      // - Render the single loc's strategies in #locList and highlight the entry (selectable).
+      const tabs = document.querySelectorAll('.chip');
+      tabs.forEach(t => t.classList.remove('active'));
+      // create/find a custom chip
+      let customChip = document.querySelector('.chip[data-paneltab="custom"]');
+      if(!customChip){
+        customChip = document.createElement('div');
+        customChip.className = 'chip';
+        customChip.dataset.paneltab = 'custom';
+        customChip.textContent = 'Custom';
+        const tabParent = document.getElementById('locatorTabs');
+        if(tabParent) tabParent.appendChild(customChip);
+        customChip.addEventListener('click', ()=> { customChip.classList.add('active'); renderCustomList(); });
+      }
+      customChip.classList.add('active');
+
+      // Render the custom list (show latest at top)
+      renderCustomList(loc);
+    }
+
+    function renderCustomList(highlightLoc){
+      const listContainer = document.getElementById('locList') || (function(){ const c=document.getElementById('locator-list'); if(!c) return null; const d=document.createElement('div'); d.id='locList'; d.className='list'; c.innerHTML=''; c.appendChild(d); return d; })();
+      if(!listContainer) return;
+      listContainer.innerHTML = '';
+      const arr = (NS.CURRENT_CUSTOM || []).slice().reverse(); // show newest first
+      arr.forEach((loc, i)=>{
+        const row = document.createElement('div'); row.className = 'loc-row';
+        row.style.display='flex'; row.style.flexDirection='column'; row.style.gap='6px';
+        const titleRow = document.createElement('div'); titleRow.style.display='flex'; titleRow.style.justifyContent='space-between'; titleRow.style.alignItems='center';
+        const label = document.createElement('div'); label.innerHTML = `<div style="font-weight:700">${NS.escapeHtml(loc.text || loc.tag)}</div><div class="small" style="color:#6b7280">${NS.escapeHtml(loc.id||loc._uid||'')}</div>`;
+        const controls = document.createElement('div'); controls.style.display='flex'; controls.style.gap='8px';
+        const btnAppend = document.createElement('button'); btnAppend.className='btn'; btnAppend.textContent='Use';
+        const btnCopyAll = document.createElement('button'); btnCopyAll.className='btn'; btnCopyAll.textContent='Copy All';
+        const btnDel = document.createElement('button'); btnDel.className='btn'; btnDel.textContent='Delete';
+        controls.appendChild(btnAppend); controls.appendChild(btnCopyAll); controls.appendChild(btnDel);
+        titleRow.appendChild(label); titleRow.appendChild(controls);
+
+        const strategies = document.createElement('div'); strategies.style.display='flex'; strategies.style.flexDirection='column'; strategies.style.gap='6px';
+        ['basic','wildcards','axes','functions','salesforce','pega'].forEach(k=>{
+          const v = (loc.xpaths && loc.xpaths[k]) || '';
+          const srow = document.createElement('div'); srow.style.display='flex'; srow.style.justifyContent='space-between'; srow.style.alignItems='center';
+          const left = document.createElement('div'); left.innerHTML = `<b>${k.toUpperCase()}</b> <span class="mono" style="margin-left:10px">${NS.escapeHtml(v||'(none)')}</span>`;
+          const ract = document.createElement('div'); ract.style.display='flex'; ract.style.gap='8px';
+          const copy = document.createElement('button'); copy.className='btn'; copy.textContent='Copy';
+          const hi = document.createElement('button'); hi.className='btn'; hi.textContent='Highlight';
+          copy.addEventListener('click', async (ev)=>{ ev.stopPropagation(); if(!v) return; await NS.copyToClipboard(v); });
+          hi.addEventListener('click', (ev)=>{ ev.stopPropagation(); if(!v) return NS.tryHighlightByXPath(v); });
+          ract.appendChild(copy); ract.appendChild(hi);
+          srow.appendChild(left); srow.appendChild(ract);
+          strategies.appendChild(srow);
+        });
+        // CSS row
+        const cssRow = document.createElement('div'); cssRow.style.display='flex'; cssRow.style.justifyContent='space-between'; cssRow.style.alignItems='center';
+        cssRow.innerHTML = `<div><b>CSS</b> <span class="mono" style="margin-left:10px">${NS.escapeHtml(loc.css||'(none)')}</span></div>`;
+        const cssAct = document.createElement('div'); cssAct.style.display='flex'; cssAct.style.gap='8px';
+        const cssCopy = document.createElement('button'); cssCopy.className='btn'; cssCopy.textContent='Copy'; cssCopy.addEventListener('click', async (ev)=>{ ev.stopPropagation(); await NS.copyToClipboard(loc.css||''); });
+        cssAct.appendChild(cssCopy);
+        cssRow.appendChild(cssAct);
+
+        row.appendChild(titleRow);
+        row.appendChild(strategies);
+        row.appendChild(cssRow);
+
+        // Use button behavior - when user clicks Use, set a 'selected' locator into output POM generation context
+        btnAppend.addEventListener('click', (ev)=>{
+          ev.stopPropagation();
+          // mark as selected (NS.CURRENT_LOCATORS_SINGLE style)
+          NS.CURRENT_LOCATORS_SINGLE = loc;
+          // also put into output preview
+          const out = NS.$('#output');
+          if(out){
+            const snippet = buildSnippetForElement(loc);
+            out.value = snippet;
+          }
+          NS.showToast('Selected for POM preview');
+        });
+
+        btnCopyAll.addEventListener('click', async (ev)=>{ ev.stopPropagation(); // copy all xpaths combined
+          const all = ['basic','wildcards','axes','functions','salesforce','pega'].map(k=> (loc.xpaths && loc.xpaths[k]) || '').filter(Boolean).join('\n');
+          if(!all) return NS.showToast('Nothing to copy','warn');
+          await NS.copyToClipboard(all);
+        });
+
+        btnDel.addEventListener('click', (ev)=>{ ev.stopPropagation();
+          // remove from CURRENT_CUSTOM
+          NS.CURRENT_CUSTOM = (NS.CURRENT_CUSTOM || []).filter(x => x !== loc);
+          renderCustomList();
+          NS.showToast('Removed from Custom');
+        });
+
+        // highlight newly added
+        if(highlightLoc && highlightLoc === loc){
+          row.style.boxShadow = '0 6px 18px rgba(124,92,255,0.12)';
+        }
+        // add row
+        listContainer.appendChild(row);
+      });
+    }
+
+    // Public attach/detach
+    NS.attachHandlersToPreview = function(){
+      try {
+        NS.detachAllPreviewHandlers && NS.detachAllPreviewHandlers();
+      } catch(e){}
+      const previewEl = NS.getPreviewElement && NS.getPreviewElement();
+      if(previewEl && previewEl.tagName && previewEl.tagName.toLowerCase()==='iframe'){
+        const attach = (pd)=>{
+          try {
+            if(!pd) return;
+            pd.addEventListener('click', previewClickHandler, true);
+            NS.attachPreviewHandler(pd, 'click', previewClickHandler);
+          } catch(e){}
+        };
+        try {
+          if(previewEl.contentDocument && (previewEl.contentDocument.readyState==='complete' || previewEl.contentDocument.readyState==='interactive')){
+            attach(previewEl.contentDocument);
+          } else {
+            previewEl.addEventListener('load', ()=>{ try { attach(previewEl.contentDocument); } catch(e){} }, {once:true});
+          }
+        } catch(e){ /* cross-origin */ }
+      } else {
+        // if inline preview (rare), attach to doc
+        try { document.addEventListener('click', previewClickHandler, true); } catch(e){}
+      }
+    };
+
+    // helper to register preview listeners into a list so we can detach later
+    window._AdhyanPreviewListeners = window._AdhyanPreviewListeners || [];
+    NS.attachPreviewHandler = function(doc, type, handler){
+      try {
+        if(!doc || !doc.addEventListener) return;
+        window._AdhyanPreviewListeners.push({doc, type, handler});
+      } catch(e){}
+    };
+    NS.detachAllPreviewHandlers = function(){
+      try {
+        (window._AdhyanPreviewListeners || []).forEach(o=>{
+          try { o.doc.removeEventListener(o.type, o.handler, true); } catch(e){}
+        });
+        window._AdhyanPreviewListeners = [];
+      } catch(e){}
+    };
+
+    // expose for tests
+    NS._renderCustomList = renderCustomList;
+
+  })();
+
+  // ---------- Phase 8: Render, Clear, UI wiring ----------
+  (function(){
+
+    function renderPreviewFromPaste(){
+      try {
+        const paste = NS.$('#pasteBox');
+        const html = paste && paste.value ? paste.value : '';
+        NS.CURRENT_HTML = html || '';
+        const preview = NS.$('#preview');
+        if(preview && preview.tagName && preview.tagName.toLowerCase()==='iframe'){
+          let srcdoc = html || '<!doctype html><meta charset="utf-8"><body><h3>No content</h3></body>';
+          try { srcdoc = srcdoc.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, ''); } catch(e){}
+          try { preview.srcdoc = srcdoc; } catch(e){ NS.showToast('Unable to set iframe srcdoc', 'error'); }
+        } else {
+          // if not iframe, attempt to parse into _PARSER_DOC
+        }
+        try { window._PARSER_DOC = (new DOMParser()).parseFromString(html,'text/html'); } catch(e){}
+        setTimeout(()=>{ try { NS.attachHandlersToPreview && NS.attachHandlersToPreview(); } catch(e){} try { NS.extractAllLocators && NS.extractAllLocators(); } catch(e){} }, 300);
+        NS.showToast('Preview rendered', 'success');
+      } catch(e){ console.error(e); NS.showToast('Render failed', 'error'); }
+    }
+
+    function clearAll(){
+      try {
+        const paste = NS.$('#pasteBox'); if(paste) paste.value = '';
+        const preview = NS.$('#preview'); if(preview && preview.tagName && preview.tagName.toLowerCase()==='iframe'){ try{ preview.srcdoc = '<body><h3>Preview cleared</h3></body>'; }catch(e){} }
+        NS.CURRENT_HTML = ''; NS.CURRENT_LOCATORS = []; NS.CURRENT_CUSTOM = []; NS.POM_CACHE = {pom:'',steps:''};
+        const locList = NS.$('#locList'); if(locList) locList.innerHTML = '';
+        const out = NS.$('#output'); if(out) out.value = '';
+        NS.showToast('Cleared', 'info');
+      } catch(e){ console.warn(e); }
+    }
+
+    // Mode chips wiring (POM / API)
+    function wireModeChips(){
+      try {
+        const pom = NS.$('#modePOM'), api = NS.$('#modeAPI');
+        if(pom && api){
+          pom.addEventListener('click', ()=>{ pom.classList.add('active'); api.classList.remove('active'); NS.$('#pomLeftCard') && NS.$('#pomLeftCard').classList.remove('hidden'); NS.$('#apiLeftCard') && NS.$('#apiLeftCard').classList.add('hidden'); });
+          api.addEventListener('click', ()=>{ api.classList.add('active'); pom.classList.remove('active'); NS.$('#apiLeftCard') && NS.$('#apiLeftCard').classList.remove('hidden'); NS.$('#pomLeftCard') && NS.$('#pomLeftCard').classList.add('hidden'); });
+        }
+      } catch(e){}
+    }
+
+    function wireSwGroups(){
+      try {
+        const sws = document.querySelectorAll('.sw');
+        sws.forEach(sw=>{
+          sw.addEventListener('click', ()=>{
+            const data = Array.from(sw.attributes).find(a=>/^data-/.test(a.name));
+            if(!data) return;
+            const attrName = data.name;
+            const group = document.querySelectorAll(`.sw[${attrName}]`);
+            group.forEach(g=>g.classList.remove('active'));
+            sw.classList.add('active');
+          });
+        });
+      } catch(e){}
+    }
+
+    function ensureDownloadOutputButton(){
+      const out = NS.$('#output'); if(!out) return;
+      if(document.getElementById('btnDownloadOutput')) return;
+      const btn = document.createElement('button'); btn.id='btnDownloadOutput'; btn.className='btn'; btn.textContent='Download Output';
+      out.parentNode.insertBefore(btn, out.nextSibling);
+      btn.addEventListener('click', ()=>{
+        const txt = out.value || '';
+        if(!txt) return NS.showToast('Nothing to download', 'error');
+        const blob = new Blob([txt], {type:'text/plain'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'adhy-output.txt'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+        NS.showToast('Download started', 'success');
+      });
+    }
+
+    // Wire UI buttons
+    document.getElementById('btnRender')?.addEventListener('click', renderPreviewFromPaste);
+    document.getElementById('btnClear')?.addEventListener('click', clearAll);
+    document.getElementById('btnOpenFile')?.addEventListener('click', ()=> document.getElementById('hiddenFile')?.click());
+    document.getElementById('hiddenFile')?.addEventListener('change', (ev)=>{
+      const f = ev.target.files && ev.target.files[0]; if(!f) return;
+      const reader = new FileReader();
+      reader.onload = function(e){ const paste = document.getElementById('pasteBox'); if(paste) paste.value = e.target.result; renderPreviewFromPaste(); };
+      reader.readAsText(f);
+    });
+
+    wireModeChips(); wireSwGroups(); ensureDownloadOutputButton();
+
+    // wire panel tab chips (Basic/Wildcards/...)
+    document.getElementById('locatorTabs')?.addEventListener('click', (ev)=>{
+      const chip = ev.target.closest('.chip');
+      if(!chip) return;
+      // ignore custom chip (we manage custom separately)
+      const panel = chip.dataset.paneltab;
+      if(!panel) return;
+      document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));
+      chip.classList.add('active');
+      if(panel === 'custom'){
+        // render custom view
+        NS._renderCustomList && NS._renderCustomList();
+      } else {
+        NS.fillLocatorList && NS.fillLocatorList(panel);
+      }
+    });
+
+    // initial attach handlers after small delay
+    setTimeout(()=>{ try { NS.attachHandlersToPreview && NS.attachHandlersToPreview(); } catch(e){} }, 600);
+
+  })();
+
+  // ---------- Phase 9: POM & Steps generation ----------
+  (function(){
+
+    function _normLocs(locs){
+      return (locs||[]).map((l,i)=>{
+        if(typeof l === 'string') return { name:`elem${i+1}`, xpath: l };
+        const name = (l.name || l.text || `elem${i+1}`).toString().replace(/\s+/g,'_').replace(/[^A-Za-z0-9_]/g,'').slice(0,40) || `elem${i+1}`;
+        const xpath = l.xpath || (l.xpaths && (l.xpaths.basic || l.xpaths.wildcards)) || l.css || `//*[@id='${name}']`;
+        return { name, xpath };
+      });
+    }
+
+    NS.buildArtifactsFiles = function(options){
+      options = options || {};
+      const fw = (options.fw||'selenium').toLowerCase();
+      const lang = (options.lang||'java').toLowerCase();
+      const locs = _normLocs(options.locs || (NS.CURRENT_LOCATORS_SINGLE ? [NS.CURRENT_LOCATORS_SINGLE] : NS.CURRENT_LOCATORS || []));
+      const files = {};
+      files['README.md'] = '# Generated (preview) by Adhyan Offline Studio\n';
+      if(fw === 'selenium' && lang === 'java'){
+        const fields = locs.map(l=>`    @FindBy(xpath = "${l.xpath.replace(/"/g,'\\"')}")\n    private WebElement ${l.name};`).join('\n\n');
+        const methods = locs.map(l => {
+          const cap = l.name.charAt(0).toUpperCase() + l.name.slice(1);
+          return `    public void click${cap}(){ ${l.name}.click(); }`;
+        }).join('\n\n');
+        files['SamplePage.java'] = `package com.pageobjects;\n\nimport org.openqa.selenium.WebDriver;\nimport org.openqa.selenium.WebElement;\nimport org.openqa.selenium.support.FindBy;\nimport org.openqa.selenium.support.PageFactory;\n\npublic class SamplePage {\n    WebDriver driver;\n\n${fields}\n\n    public SamplePage(WebDriver driver){\n        this.driver = driver;\n        PageFactory.initElements(driver, this);\n    }\n\n${methods}\n}\n`;
+        return files;
+      }
+
+      if(fw === 'playwright'){
+        files['package.json'] = JSON.stringify({ name:'adhyan-pw', devDependencies:{"@playwright/test":"latest"} }, null, 2);
+        files['tests/sample.spec.js'] = `const { test } = require('@playwright/test');\n\ntest('sample', async({ page }) => {\n  await page.goto('https://example.com');\n  // Update selectors below\n${locs.map(l=>`  await page.locator('xpath=${l.xpath}').click();`).join('\n')}\n});`;
+        return files;
+      }
+
+      // fallback plain text
+      files['locators.txt'] = locs.map(l=>`${l.name}: ${l.xpath}`).join('\n');
+      return files;
+    };
+
+    // Generate preview into #output
+    document.getElementById('btnGenPOM')?.addEventListener('click', async ()=>{
+      try {
+        const fw = document.querySelector('.sw[data-fw].active')?.dataset?.fw || 'selenium';
+        const lang = document.querySelector('.sw[data-lang].active')?.dataset?.lang || 'java';
+        const locs = NS.CURRENT_LOCATORS_SINGLE ? [NS.CURRENT_LOCATORS_SINGLE] : NS.CURRENT_LOCATORS || [];
+        const files = NS.buildArtifactsFiles({ fw, lang, locs });
+        const out = NS.$('#output');
+        if(out){
+          out.value = Object.keys(files).map(k=>`// ==== ${k} ====\n${files[k]}\n`).join('\n\n');
+        }
+        NS.showToast('Generated preview in Output', 'success');
+      } catch(e){ console.error(e); NS.showToast('Generate failed','error'); }
+    });
+
+    // Download ZIP (explicit)
+    document.getElementById('btnZipAll')?.addEventListener('click', async ()=>{
+      try {
+        if(!window.JSZip){ NS.showToast('JSZip required for zip download', 'error'); return; }
+        const fw = document.querySelector('.sw[data-fw].active')?.dataset?.fw || 'selenium';
+        const lang = document.querySelector('.sw[data-lang].active')?.dataset?.lang || 'java';
+        const locs = NS.CURRENT_LOCATORS_SINGLE ? [NS.CURRENT_LOCATORS_SINGLE] : NS.CURRENT_LOCATORS || [];
+        const files = NS.buildArtifactsFiles({ fw, lang, locs });
+        const zip = new JSZip();
+        Object.keys(files).forEach(p=> zip.file(p, files[p]));
+        const blob = await zip.generateAsync({type:'blob'});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `adhy-artifacts-${fw}-${lang}.zip`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+        NS.showToast('ZIP downloaded', 'success');
+      } catch(e){ console.error(e); NS.showToast('ZIP failed', 'error'); }
+    });
+
+  })();
+
+  // ---------- Phase 10: snippet builder ----------
+  function buildSnippetForElement(loc){
+    try {
+      const name = (loc.text || loc.tag || 'elem').replace(/\s+/g,'_').replace(/[^A-Za-z0-9_]/g,'').slice(0,40) || 'elem';
+      const xp = loc.xpaths && (loc.xpaths.basic || loc.xpaths.wildcards || loc.xpaths.axes) || '';
+      const css = loc.css || '';
+      const code = [
+        `// Meta: name=${name}`,
+        `// XPath: ${xp}`,
+        `// CSS: ${css}`,
+        `// Selenium (Java): @FindBy(xpath="${xp.replace(/"/g,'\\"')}") WebElement ${name};`,
+        `// Playwright (JS): await page.locator('xpath=${xp}').click();`,
+        `// Playwright (CSS): await page.locator('${css}').click();`
+      ].join('\n');
+      return code;
+    } catch(e){ return '// snippet build failed'; }
+  }
+
+  // ---------- Phase 11: Startup ----------
+  (function(){
+    // initial fill (empty)
+    try { NS.fillLocatorList && NS.fillLocatorList('basic'); } catch(e){}
+    // attach preview handlers (after embed ready)
+    try { NS.attachHandlersToPreview && NS.attachHandlersToPreview(); } catch(e){}
+    // ensure Download Output exists
+    try { /* created by wiring */ } catch(e){}
+    console.info('offlineXpath.js loaded. Version:', NS.version);
+  })();
+
+  // expose NS for debugging
+  window.AdhyPatch = NS;
+
+})(); // EOF
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 <script>
 /* === AdhyPatch — Full merged script: Custom-tab auto-activate & append on preview click === */
 window.AdhyPatch = window.AdhyPatch || {};
