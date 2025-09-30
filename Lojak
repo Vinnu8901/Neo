@@ -1,3 +1,791 @@
+/* offlineXpath.js - merged rebuild (Adhyan Offline) 
+   Version: adhy-offline-rebuild-2025
+   - Replace old JS with this file.
+*/
+
+(function(global){
+  const NS = global.AdhyPatch = global.AdhyPatch || {};
+  NS.version = NS.version || 'adhy-offline-rebuild-2025';
+
+  // ---- State ----
+  NS.CURRENT_HTML = '';
+  NS.CURRENT_LOCATORS = [];          // array of locator objects
+  NS.CURRENT_LOCATORS_SINGLE = null; // single element locators when clicked in preview
+  NS._listeners = [];
+
+  // ---- Utilities ----
+  NS.$ = NS.$ || function(sel, root=document){ try { return (root||document).querySelector(sel); } catch(e){ return null; } };
+  NS.$$ = NS.$$ || function(sel, root=document){ try { return Array.from((root||document).querySelectorAll(sel)); } catch(e){ return []; } };
+
+  NS.showToast = NS.showToast || function(msg, type='info'){
+    try {
+      let t = document.getElementById('__adhy_toast');
+      if(!t){
+        t = document.createElement('div'); t.id='__adhy_toast';
+        t.style.cssText = 'position:fixed;right:16px;bottom:16px;padding:8px 12px;border-radius:8px;background:rgba(0,0,0,0.78);color:#fff;z-index:2147483647;font-family:system-ui;transition:opacity .15s';
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+      t.style.background = (type === 'error') ? '#b91c1c' : (type === 'success') ? '#047857' : 'rgba(0,0,0,0.78)';
+      t.style.opacity = '1';
+      clearTimeout(t._t);
+      t._t = setTimeout(()=> t.style.opacity = '0', 1600);
+    } catch(e){ console.log(msg); }
+  };
+
+  NS.copyToClipboard = NS.copyToClipboard || async function(text){
+    try {
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        await navigator.clipboard.writeText(text);
+        NS.showToast('Copied', 'success'); return true;
+      }
+    } catch(e){}
+    try {
+      const ta = document.createElement('textarea'); ta.value = text; ta.style.position='fixed'; ta.style.left='-9999px';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand && document.execCommand('copy');
+      ta.remove();
+      NS.showToast('Copied (fallback)', 'success'); return true;
+    } catch(e){
+      NS.showToast('Copy failed', 'error'); return false;
+    }
+  };
+
+  NS.escapeHtml = NS.escapeHtml || function(s){ return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+
+  NS.xpathLiteral = NS.xpathLiteral || function(s){
+    s = String(s||'');
+    if (s.indexOf('"') === -1) return `"${s}"`;
+    if (s.indexOf("'") === -1) return `'${s}'`;
+    // fallback using concat(...)
+    const parts = s.split('"'), out = [];
+    for (let i=0;i<parts.length;i++){
+      if (parts[i] !== '') out.push(`"${parts[i].replace(/\\/g,'\\\\')}"`);
+      if (i < parts.length-1) out.push(`'"'`);
+    }
+    return `concat(${out.join(',')})`;
+  };
+
+  NS.cssSelectorFor = NS.cssSelectorFor || function(el){
+    if(!el || !el.tagName) return '';
+    if(el.id) {
+      try { return '#'+CSS.escape(el.id); } catch(e){ return '#'+el.id; }
+    }
+    let sel = el.tagName.toLowerCase();
+    try {
+      if(el.classList && el.classList.length){
+        sel += '.' + Array.from(el.classList).slice(0,3).map(c=>c.replace(/\s+/g,'')).join('.');
+      }
+      const name = el.getAttribute && el.getAttribute('name');
+      if(name) sel += `[name="${name}"]`;
+    } catch(e){}
+    return sel;
+  };
+
+  // ---- Preview helpers ----
+  const PREVIEW_SELECTORS = ['#preview','iframe#preview','.preview','iframe.preview'];
+  function getPreviewElement(){
+    for(const s of PREVIEW_SELECTORS){
+      try { const el = document.querySelector(s); if(el) return el; } catch(e){}
+    }
+    try { return document.querySelector('iframe'); } catch(e){ return null; }
+  }
+  function getPreviewDocument(){
+    const el = getPreviewElement();
+    if(!el) return window._PARSER_DOC || document;
+    if(el.tagName && el.tagName.toLowerCase() === 'iframe'){
+      try { if(el.contentDocument) return el.contentDocument; } catch(e){}
+      if(el.srcdoc) try { return (new DOMParser()).parseFromString(el.srcdoc,'text/html'); } catch(e){}
+    }
+    try { if(el.querySelector){ const inner = el.querySelector && el.querySelector('iframe'); if(inner && inner.contentDocument) return inner.contentDocument; } } catch(e){}
+    return window._PARSER_DOC || document;
+  }
+  NS.getPreviewDocument = getPreviewDocument;
+
+  // ---- XPath evaluation + shadow traversal + iframe search ----
+  function evaluateXPath(doc, xpath){
+    try { return doc.evaluate(xpath, doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue; } catch(e){ return null; }
+  }
+
+  function findInShadowRoots(xpath, root){
+    try {
+      const direct = evaluateXPath(root, xpath);
+      if(direct) return direct;
+    } catch(e){}
+    try {
+      const walker = root.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+      let node = walker.nextNode();
+      while(node){
+        if(node.shadowRoot){
+          const found = findInShadowRoots(xpath, node.shadowRoot);
+          if(found) return found;
+        }
+        node = walker.nextNode();
+      }
+    } catch(e){}
+    return null;
+  }
+
+  function findInIframes(xpath, win){
+    win = win || window;
+    try {
+      const doc = win.document;
+      const direct = evaluateXPath(doc, xpath);
+      if(direct) return { el: direct, win };
+      const s = findInShadowRoots(xpath, doc);
+      if(s) return { el: s, win };
+      const frames = doc.querySelectorAll ? Array.from(doc.querySelectorAll('iframe,frame')) : [];
+      for(let i=0;i<frames.length;i++){
+        const fr = frames[i];
+        try {
+          if(!fr.contentWindow) continue;
+          const res = findInIframes(xpath, fr.contentWindow);
+          if(res && res.el) return res;
+        } catch(e){}
+      }
+    } catch(e){}
+    return null;
+  }
+
+  NS.tryHighlightByXPath = function(xpath){
+    if(!xpath) return false;
+    try {
+      // try current page
+      const docFound = evaluateXPath(document, xpath);
+      if(docFound){ transientHighlightElement(docFound, 'linear'); return true; }
+    } catch(e){}
+    try {
+      // try preview doc
+      const pd = getPreviewDocument();
+      if(pd){
+        const pfound = evaluateXPath(pd, xpath) || findInShadowRoots(xpath, pd);
+        if(pfound){ transientHighlightElement(pfound, 'accent'); return true; }
+      }
+    } catch(e){}
+    try {
+      const res = findInIframes(xpath, window);
+      if(res && res.el){ transientHighlightElement(res.el, 'accent'); return true; }
+    } catch(e){}
+    return false;
+  };
+
+  function transientHighlightElement(el, style='linear'){
+    if(!el || !el.style) return;
+    const colors = {
+      linear: 'rgba(124,92,255,0.55)',
+      accent: 'rgba(0,150,255,0.45)',
+      warn: 'rgba(255,165,0,0.6)'
+    };
+    const color = colors[style] || colors.linear;
+    const orig = { outline: el.style.outline || '', boxShadow: el.style.boxShadow || '', zIndex: el.style.zIndex || '' };
+    try {
+      el.style.outline = `3px solid ${color}`;
+      el.style.boxShadow = `0 0 0 6px ${color}`;
+      el.style.zIndex = 2147483647;
+      el.scrollIntoView({behavior:'auto', block:'center'});
+    } catch(e){}
+    setTimeout(()=>{ try { el.style.outline = orig.outline; el.style.boxShadow = orig.boxShadow; el.style.zIndex = orig.zIndex; } catch(e){} }, 1800);
+  }
+
+  // ---- Locator generators (strategies) ----
+  function safeAttr(el, name){ try { return el.getAttribute ? el.getAttribute(name) : null; } catch(e){ return null; } }
+
+  function getLabelFor(el){
+    try {
+      if(!el) return '';
+      const id = el.id;
+      if(id){
+        try { const lab = document.querySelector && document.querySelector(`label[for="${id}"]`); if(lab && lab.textContent) return lab.textContent.trim(); } catch(e){}
+      }
+      if(el.closest){
+        const labp = el.closest('label'); if(labp && labp.textContent) return labp.textContent.trim();
+      }
+      const txt = (el.innerText || el.textContent || '').trim();
+      if(txt) return txt.slice(0,160);
+      const ph = safeAttr(el,'placeholder'); if(ph) return ph;
+      return '';
+    } catch(e){ return ''; }
+  }
+
+  function genBasicXPath(el){
+    if(!el) return '';
+    if(el.id) return `//*[@id=${NS.xpathLiteral(el.id)}]`;
+    const tag = el.tagName.toLowerCase();
+    const name = safeAttr(el,'name');
+    if(name) return `//${tag}[@name=${NS.xpathLiteral(name)}]`;
+    const label = getLabelFor(el);
+    if(label) return `//${tag}[contains(normalize-space(.), ${NS.xpathLiteral(label)})]`;
+    // fallback absolute-ish
+    const parts=[];
+    let cur = el; let depth=0;
+    while(cur && cur.nodeType===1 && depth<10){
+      const t = cur.tagName.toLowerCase();
+      let ix = 1; let sib = cur.previousElementSibling;
+      while(sib){ if(sib.tagName === cur.tagName) ix++; sib = sib.previousElementSibling; }
+      parts.unshift(`${t}${ix>1?`[${ix}]`:''}`);
+      cur = cur.parentElement; depth++;
+    }
+    return '//' + parts.join('/');
+  }
+
+  function genWildcardXPath(el){
+    if(!el) return genBasicXPath(el);
+    if(el.id) return `//*[@id=${NS.xpathLiteral(el.id)}]`;
+    const label = getLabelFor(el);
+    if(label) return `//*[contains(normalize-space(.), ${NS.xpathLiteral(label)})]`;
+    const name = safeAttr(el,'name'); if(name) return `//*[contains(@name, ${NS.xpathLiteral(name)})]`;
+    const cls = (safeAttr(el,'class')||'').split(/\s+/).filter(Boolean)[0];
+    if(cls) return `//*[contains(concat(' ', normalize-space(@class), ' '), ${NS.xpathLiteral(' '+cls+' ')})]`;
+    return genBasicXPath(el);
+  }
+
+  function genAxesXPath(el){
+    if(!el) return genBasicXPath(el);
+    const tag = el.tagName.toLowerCase();
+    const id = el.id;
+    if(id) return `//label[@for=${NS.xpathLiteral(id)}]/following::${tag}[1]`;
+    const label = getLabelFor(el);
+    if(label) return `//label[contains(normalize-space(.), ${NS.xpathLiteral(label)})]/following::${tag}[1]`;
+    // ancestor-based
+    let anc = el.parentElement;
+    while(anc){
+      const text = (anc.innerText||'').trim();
+      if(text && text.length<120) return `//*[contains(normalize-space(.), ${NS.xpathLiteral(text.slice(0,60))})]//${tag}`;
+      anc = anc.parentElement;
+    }
+    return genBasicXPath(el);
+  }
+
+  function genFunctionXPath(el){
+    if(!el) return genBasicXPath(el);
+    const tag = el.tagName.toLowerCase();
+    const ph = safeAttr(el,'placeholder'); if(ph) return `//${tag}[contains(@placeholder, ${NS.xpathLiteral(ph)})]`;
+    const ti = safeAttr(el,'title'); if(ti) return `//${tag}[contains(@title, ${NS.xpathLiteral(ti)})]`;
+    const aria = safeAttr(el,'aria-label'); if(aria) return `//${tag}[@aria-label=${NS.xpathLiteral(aria)}]`;
+    return genBasicXPath(el);
+  }
+
+  function genSalesforceXPath(el){
+    if(!el) return '';
+    const tag = el.tagName.toLowerCase();
+    if(safeAttr(el,'data-qa-locator')) return `//${tag}[@data-qa-locator=${NS.xpathLiteral(safeAttr(el,'data-qa-locator'))}]`;
+    if(safeAttr(el,'data-id')) return `//${tag}[@data-id=${NS.xpathLiteral(safeAttr(el,'data-id'))}]`;
+    if(safeAttr(el,'data-aura-rendered-by')) return `//${tag}[@data-aura-rendered-by=${NS.xpathLiteral(safeAttr(el,'data-aura-rendered-by'))}]`;
+    return '';
+  }
+
+  function genPegaXPath(el){
+    if(!el) return '';
+    const tag = el.tagName.toLowerCase();
+    if(safeAttr(el,'data-test-id')) return `//${tag}[@data-test-id=${NS.xpathLiteral(safeAttr(el,'data-test-id'))}]`;
+    if(safeAttr(el,'data-ctl')) return `//${tag}[@data-ctl=${NS.xpathLiteral(safeAttr(el,'data-ctl'))}]`;
+    return '';
+  }
+
+  // create locator object for element
+  NS.generateLocatorsForElement = function(el){
+    if(!el) return null;
+    return {
+      tag: el.tagName.toLowerCase(),
+      id: el.id || '',
+      text: getLabelFor(el) || '',
+      xpaths: {
+        basic: genBasicXPath(el),
+        wildcards: genWildcardXPath(el),
+        axes: genAxesXPath(el),
+        functions: genFunctionXPath(el),
+        salesforce: genSalesforceXPath(el),
+        pega: genPegaXPath(el)
+      },
+      css: NS.cssSelectorFor(el),
+      elementRef: el
+    };
+  };
+
+  // ---- Collect candidates in preview doc ----
+  function shouldSkip(el){
+    try {
+      if(!el || el.nodeType !== 1) return true;
+      if(el.hasAttribute && el.hasAttribute('hidden')) return true;
+      const s = (el.getAttribute && el.getAttribute('style')||'').toLowerCase();
+      if(s && (/display\s*:\s*none|visibility\s*:\s*hidden/).test(s)) return true;
+      if(el.tagName && el.tagName.toLowerCase() === 'script') return true;
+      if(el.tagName && el.tagName.toLowerCase() === 'a' && (!el.hasAttribute('href') || el.getAttribute('href') === '#')) return true;
+    } catch(e){ return true; }
+    return false;
+  }
+  function collectCandidateElements(doc){
+    doc = doc || getPreviewDocument();
+    const selectors = [
+      'input:not([type="hidden"])','button','a','select','textarea','[role="button"]',
+      '[data-qa-locator]','[data-test-id]','[data-ctl]','lightning-input','lightning-button'
+    ];
+    let list = [];
+    try { list = Array.from(doc.querySelectorAll(selectors.join(','))); } catch(e){ list = []; }
+    list = list.filter(el => !shouldSkip(el));
+    // dedupe by signature
+    const seen = new Set(), out=[];
+    list.forEach(el=>{
+      try {
+        const sig = [el.tagName.toLowerCase(), el.id||'', el.getAttribute && el.getAttribute('name')||'', (el.textContent||'').trim().slice(0,60)].join('|');
+        if(seen.has(sig)) return;
+        seen.add(sig); out.push(el);
+      } catch(e){}
+    });
+    return out;
+  }
+
+  // ---- Extraction flow ----
+  NS.extractAllLocators = function(opts){
+    opts = opts || {};
+    let doc = getPreviewDocument();
+    if(!doc) doc = document;
+    const elems = collectCandidateElements(doc);
+    const results = elems.map((el, idx) => {
+      const obj = NS.generateLocatorsForElement(el);
+      obj._uid = `${obj.tag || 'e'}_${idx+1}`;
+      return obj;
+    });
+    NS.CURRENT_LOCATORS = results;
+    NS.fillLocatorList( getActivePanelFromTabs() || 'basic' );
+    NS.showToast(`Extracted ${results.length} elements`);
+    return results;
+  };
+
+  // ---- UI: Fill locator list (aligned rows with checkbox) ----
+  function createLocatorRow(strategyLabel, locatorValue, idx, strategyKey, isCustom=false){
+    const row = document.createElement('div'); row.className='loc-row';
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '10px';
+    row.style.padding = '8px';
+    row.style.borderRadius = '8px';
+    row.style.background = '#fff';
+    row.style.border = '1px solid #e6ecf5';
+    row.style.color = '#0f172a';
+
+    // checkbox
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.className = 'loc-check'; cb.dataset.strategy = strategyKey; cb.dataset.idx = idx;
+    cb.style.marginRight = '6px';
+
+    // label (fixed width)
+    const lab = document.createElement('div'); lab.style.minWidth = '110px'; lab.style.fontWeight='700'; lab.textContent = (strategyLabel||'STRAT').toUpperCase();
+
+    // value container (monospace)
+    const val = document.createElement('div'); val.className='mono'; val.style.flex='1'; val.style.whiteSpace='nowrap'; val.style.overflow='hidden'; val.style.textOverflow='ellipsis'; val.textContent = locatorValue || '(none)';
+
+    // actions
+    const actions = document.createElement('div'); actions.style.display='flex'; actions.style.gap='6px';
+    const btnCopy = document.createElement('button'); btnCopy.className='btn'; btnCopy.textContent='Copy'; btnCopy.style.padding='6px 8px';
+    const btnHi = document.createElement('button'); btnHi.className='btn'; btnHi.textContent='Highlight'; btnHi.style.padding='6px 8px';
+
+    actions.appendChild(btnCopy); actions.appendChild(btnHi);
+
+    // row click (copy & highlight)
+    row.addEventListener('click', async (e)=>{
+      if(e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON')) return;
+      const v = val.textContent || '';
+      if(!v) return NS.showToast('No locator', 'error');
+      NS.tryHighlightByXPath(v);
+      await NS.copyToClipboard(v);
+      NS.showToast('Copied & highlighted');
+    });
+
+    // button bindings
+    btnCopy.addEventListener('click', async (e)=>{ e.stopPropagation(); const v = val.textContent || ''; if(!v) return; await NS.copyToClipboard(v); });
+    btnHi.addEventListener('click', (e)=>{ e.stopPropagation(); const v = val.textContent || ''; if(!v) return; NS.tryHighlightByXPath(v); });
+
+    row.appendChild(cb); row.appendChild(lab); row.appendChild(val); row.appendChild(actions);
+    return row;
+  }
+
+  NS.fillLocatorList = function(panel='basic'){
+    panel = panel || 'basic';
+    const container = NS.$('#locator-list') || NS.$('#locList');
+    if(!container){
+      console.warn('locator-list not found');
+      return;
+    }
+    // empty
+    container.innerHTML = '';
+    const data = NS.CURRENT_LOCATORS || [];
+    if(!data.length){
+      const e = document.createElement('div'); e.className='small'; e.textContent = 'No locators. Render or click in preview.';
+      container.appendChild(e); return;
+    }
+
+    // Build rows from CURRENT_LOCATORS. Each element will show the chosen strategy's locator.
+    data.forEach((it, idx)=>{
+      const val = (it.xpaths && it.xpaths[panel]) || it.css || '';
+      const row = createLocatorRow(panel, val, idx, panel);
+      container.appendChild(row);
+    });
+
+    // show count
+    const cnt = NS.$('#loc-count'); if(cnt) cnt.textContent = `${data.length} items`;
+  };
+
+  // ---- Helper: get active panel from UI tabs ----
+  function getActivePanelFromTabs(){
+    try {
+      const tabs = document.querySelectorAll('#locatorTabs .chip');
+      for(const t of tabs) if(t.classList.contains('active')) return t.dataset.paneltab || t.getAttribute('data-paneltab');
+    } catch(e){}
+    return 'basic';
+  }
+
+  // ---- UI: Switch to Custom tab and render full strategies for a single element ----
+  NS.showCustomForElement = function(loc){
+    // mark tab active
+    const tabs = document.querySelectorAll('#locatorTabs .chip');
+    tabs.forEach(ch => ch.classList.remove('active'));
+    const customTab = Array.from(tabs).find(x => (x.dataset.paneltab === 'custom' || x.dataset.paneltab === 'pega' || x.dataset.paneltab === 'sf') ? false : false);
+    // We'll simulate "Custom" by adding an active class to none and just showing locList with full strategies,
+    // but to keep UI consistent, prefer to select none and display custom content.
+    // Render the strategies in locator-list
+    const container = NS.$('#locator-list') || NS.$('#locList');
+    if(!container) return;
+    container.innerHTML = '';
+
+    const title = document.createElement('div');
+    title.style.fontWeight = '800';
+    title.style.marginBottom = '8px';
+    title.innerHTML = `${NS.escapeHtml(loc.text || loc.tag || '(element)')} <span class="small" style="color:#9aa4b2;margin-left:8px">${NS.escapeHtml(loc.id||'')}</span>`;
+    container.appendChild(title);
+
+    const strategies = ['basic','wildcards','axes','functions','salesforce','pega'];
+    strategies.forEach(k=>{
+      const v = (loc.xpaths && loc.xpaths[k]) || '';
+      const row = createLocatorRow(k, v, 0, k, true);
+      // clicking a strategy row should also set that as "selected custom" and append to output if needed
+      row.addEventListener('dblclick', ()=> {
+        // double-click to append to output
+        appendLocatorToOutput(k, v, loc);
+      });
+      container.appendChild(row);
+    });
+
+    // CSS row
+    const cssRow = createLocatorRow('css', loc.css||'', 0, 'css', true);
+    container.appendChild(cssRow);
+
+    // Set global single-locator
+    NS.CURRENT_LOCATORS_SINGLE = loc;
+    // update loc-count
+    const cnt = NS.$('#loc-count'); if(cnt) cnt.textContent = 'Custom (1)';
+  };
+
+  // Append a snippet for selected locator to output
+  function appendLocatorToOutput(strategy, value, loc){
+    try {
+      const out = NS.$('#output');
+      if(!out) return;
+      const name = (loc && (loc.text || loc.tag) ? (loc.text || loc.tag) : 'elem').replace(/\s+/g,'_').replace(/[^A-Za-z0-9_]/g,'').slice(0,40);
+      const code = [
+        `// Strategy: ${strategy}`,
+        `// Name: ${name}`,
+        `// XPath: ${value}`,
+        `// CSS: ${loc.css || ''}`,
+        `// Selenium (Java): @FindBy(xpath="${(value||'').replace(/"/g,'\\"')}") WebElement ${name};`,
+        `// Playwright (JS): await page.locator('xpath=${value}').click();`
+      ].join('\n');
+      out.value = (out.value ? out.value + '\n\n' : '') + code;
+      NS.showToast('Appended to Output', 'success');
+    } catch(e){ console.error(e); }
+  }
+
+  // ---- Interactive Preview Click handler ----
+  async function interactivePreviewClickHandler(e){
+    try {
+      e.preventDefault && e.preventDefault();
+      e.stopPropagation && e.stopPropagation();
+      const el = e.target;
+      if(!el) return;
+      // compute locators
+      const loc = NS.generateLocatorsForElement(el);
+      if(!loc) { NS.showToast('Unable to compute locators', 'error'); return; }
+      // highlight clicked element
+      transientHighlightElement(el, 'warn');
+      // show custom
+      NS.showCustomForElement(loc);
+      // append default snippet to output
+      appendLocatorToOutput('basic', loc.xpaths.basic, loc);
+    } catch(err){ console.error('interactive click fail', err); NS.showToast('Capture failed', 'error'); }
+  }
+
+  // Attach / detach handlers for preview document
+  NS.attachHandlersToPreview = function(){
+    try {
+      // remove previous listeners
+      NS._listeners.forEach(obj => {
+        try { obj.doc.removeEventListener(obj.type, obj.handler, true); } catch(e) {}
+      });
+      NS._listeners = [];
+
+      const previewEl = getPreviewElement();
+      if(previewEl && previewEl.tagName && previewEl.tagName.toLowerCase() === 'iframe'){
+        const attachTo = (doc) => {
+          try {
+            if(!doc) return;
+            doc.addEventListener('click', interactivePreviewClickHandler, true);
+            NS._listeners.push({ doc: doc, type: 'click', handler: interactivePreviewClickHandler });
+          } catch(e){ console.warn('attach failed', e); }
+        };
+        try {
+          if(previewEl.contentDocument && (previewEl.contentDocument.readyState === 'complete' || previewEl.contentDocument.readyState === 'interactive')){
+            attachTo(previewEl.contentDocument);
+          } else {
+            previewEl.addEventListener('load', ()=> { try { attachTo(previewEl.contentDocument); } catch(e){} }, { once: true });
+          }
+        } catch(e){ /* cross-origin, fallback to parsed */ }
+      } else {
+        // inline preview (if any)
+        try {
+          const doc = getPreviewDocument();
+          doc.addEventListener('click', interactivePreviewClickHandler, true);
+          NS._listeners.push({ doc: doc, type: 'click', handler: interactivePreviewClickHandler });
+        } catch(e){}
+      }
+    } catch(e){ console.warn(e); }
+  };
+
+  // ---- Render / Clear UI wiring ----
+  NS.renderPreviewFromPaste = async function(){
+    try {
+      const paste = NS.$('#pasteBox') || NS.$('textarea.ed');
+      const html = paste && paste.value ? paste.value : '';
+      NS.CURRENT_HTML = html || '';
+      const preview = NS.$('#preview');
+
+      if(preview && preview.tagName && preview.tagName.toLowerCase() === 'iframe'){
+        let srcdoc = html || '<!doctype html><meta charset="utf-8"><body><h3>No content</h3></body>';
+        try { srcdoc = srcdoc.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, ''); } catch(e){}
+        try { preview.srcdoc = srcdoc; } catch(e){ NS.showToast('Unable to set iframe srcdoc', 'error'); }
+      } else if(preview){
+        try { preview.innerHTML = ''; const doc = getPreviewDocument(); if(doc && doc.body) doc.body.innerHTML = html; } catch(e){}
+      }
+      // parse for fallback
+      try { const parser = new DOMParser(); window._PARSER_DOC = parser.parseFromString(html,'text/html'); } catch(e){}
+      // After load attach handlers & extract
+      setTimeout(()=>{ try { NS.attachHandlersToPreview(); } catch(e){} try { NS.extractAllLocators(); } catch(e){} }, 300);
+      NS.showToast('Preview rendered', 'success');
+    } catch(e){ console.error(e); NS.showToast('Render failed', 'error'); }
+  };
+
+  NS.clearAll = function(){
+    try {
+      const paste = NS.$('#pasteBox') || NS.$('textarea.ed');
+      if(paste) paste.value = '';
+      const preview = NS.$('#preview');
+      if(preview && preview.tagName && preview.tagName.toLowerCase() === 'iframe'){
+        try { preview.srcdoc = '<body style="font-family:sans-serif"><h3>Preview cleared</h3></body>'; } catch(e) {}
+      }
+      NS.CURRENT_HTML = ''; NS.CURRENT_LOCATORS = []; NS.CURRENT_LOCATORS_SINGLE = null;
+      const loc = NS.$('#locator-list') || NS.$('#locList'); if(loc) loc.innerHTML = '';
+      const out = NS.$('#output'); if(out) out.value = '';
+      NS.showToast('Cleared', 'info');
+    } catch(e){ console.warn(e); }
+  };
+
+  // ---- Wire tab clicks for locator panels ----
+  function wireLocatorTabClicks(){
+    try {
+      const tabs = document.querySelectorAll('#locatorTabs .chip');
+      tabs.forEach(tab=>{
+        tab.addEventListener('click', (ev)=>{
+          tabs.forEach(t=>t.classList.remove('active'));
+          tab.classList.add('active');
+          const panel = tab.dataset.paneltab || tab.getAttribute('data-paneltab') || 'basic';
+          if(panel === 'custom'){
+            // If custom chosen but we have a single, show it, else leave existing
+            if(NS.CURRENT_LOCATORS_SINGLE) NS.showCustomForElement(NS.CURRENT_LOCATORS_SINGLE);
+            else NS.fillLocatorList('basic');
+          } else {
+            NS.fillLocatorList(panel);
+          }
+        });
+      });
+    } catch(e){ console.warn('tab wiring failed', e); }
+  }
+
+  // ---- POM / Artifacts (preview only) ----
+  function _normLocsForArtifacts(locs){
+    return (locs || []).map((l,i)=>{
+      if(typeof l === 'string') return { name:`elem${i+1}`, xpath: l };
+      const name = (l.name || l.text || `elem${i+1}`).toString().replace(/\s+/g,'_').replace(/[^A-Za-z0-9_]/g,'').slice(0,40) || `elem${i+1}`;
+      const xpath = l.xpath || (l.xpaths && (l.xpaths.basic || l.xpaths.wildcards)) || l.css || `//*[@id='${name}']`;
+      return { name, xpath };
+    });
+  }
+
+  NS.buildArtifactsFiles = function(options){
+    options = options || {};
+    const fw = (options.fw||'selenium').toLowerCase();
+    const lang = (options.lang||'java').toLowerCase();
+    const locsIn = options.locs || (NS.CURRENT_LOCATORS_SINGLE ? [NS.CURRENT_LOCATORS_SINGLE] : NS.CURRENT_LOCATORS || []);
+    const locs = _normLocsForArtifacts(locsIn);
+    const files = {};
+    files['README.md'] = '# Generated (preview) by Adhyan Offline Studio\n';
+    if(fw === 'selenium' && lang === 'java'){
+      const fields = locs.map(l=>`    @FindBy(xpath = "${l.xpath.replace(/"/g,'\\"')}")\n    private WebElement ${l.name};`).join('\n\n');
+      const methods = locs.map(l=> {
+        const cap = l.name.charAt(0).toUpperCase()+l.name.slice(1);
+        return `    public void click${cap}(){ ${l.name}.click(); }`;
+      }).join('\n\n');
+      files['SamplePage.java'] =
+`package com.pageobjects;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.FindBy;
+import org.openqa.selenium.support.PageFactory;
+
+public class SamplePage {
+    WebDriver driver;
+
+${fields}
+
+    public SamplePage(WebDriver driver){
+        this.driver = driver;
+        PageFactory.initElements(driver, this);
+    }
+
+${methods}
+}
+`;
+      return files;
+    }
+    // Playwright JS fallback
+    if(fw === 'playwright'){
+      files['sample.spec.js'] = `// Playwright sample - update selectors\nconst { test } = require('@playwright/test');\n\ntest('sample', async ({ page }) => {\n  await page.goto('about:blank');\n  // selectors\n${locs.map(l=>`  // ${l.name}: ${l.xpath}`).join('\n')}\n});`;
+      return files;
+    }
+
+    // default simple locators
+    files['locators.txt'] = locs.map(l=>`${l.name}: ${l.xpath}`).join('\n');
+    return files;
+  };
+
+  // Attach POM generation button
+  function wirePOMButtons(){
+    try {
+      const btnGen = NS.$('#btnGenPOM');
+      if(btnGen){
+        btnGen.addEventListener('click', ()=>{
+          const fw = document.querySelector('.sw[data-fw].active')?.dataset?.fw || 'selenium';
+          const lang = document.querySelector('.sw[data-lang].active')?.dataset?.lang || 'java';
+          const files = NS.buildArtifactsFiles({ fw, lang, locs: NS.CURRENT_LOCATORS_SINGLE ? [NS.CURRENT_LOCATORS_SINGLE] : NS.CURRENT_LOCATORS || [] });
+          const out = NS.$('#output');
+          if(out){
+            out.value = Object.keys(files).map(k=>`// ==== ${k} ====\n${files[k]}\n`).join('\n\n');
+          }
+          NS.showToast('Generated preview in Output');
+        });
+      }
+      // Download output button next to #output
+      const out = NS.$('#output');
+      if(out && !NS.$('#btnDownloadOutput')){
+        const btn = document.createElement('button'); btn.id = 'btnDownloadOutput'; btn.className = 'btn'; btn.textContent = 'Download Output';
+        out.parentNode.insertBefore(btn, out.nextSibling);
+        btn.addEventListener('click', ()=>{
+          const txt = out.value || '';
+          if(!txt) return NS.showToast('Nothing to download', 'error');
+          const blob = new Blob([txt], { type:'text/plain' });
+          const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'adhy-output.txt'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+          NS.showToast('Download started', 'success');
+        });
+      }
+      // Zip ALL only on explicit click (JSZip required)
+      const btnZip = NS.$('#btnZipAll');
+      if(btnZip){
+        btnZip.addEventListener('click', async ()=>{
+          try {
+            if(!window.JSZip){ NS.showToast('JSZip required for ZIP download', 'error'); return; }
+            const fw = document.querySelector('.sw[data-fw].active')?.dataset?.fw || 'selenium';
+            const lang = document.querySelector('.sw[data-lang].active')?.dataset?.lang || 'java';
+            const files = NS.buildArtifactsFiles({ fw, lang, locs: NS.CURRENT_LOCATORS_SINGLE ? [NS.CURRENT_LOCATORS_SINGLE] : NS.CURRENT_LOCATORS || [] });
+            const zip = new JSZip();
+            Object.keys(files).forEach(p => zip.file(p, files[p]));
+            const blob = await zip.generateAsync({ type: 'blob' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `adhy-artifacts-${fw}-${lang}.zip`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+            NS.showToast('ZIP downloaded', 'success');
+          } catch(e){ console.error(e); NS.showToast('ZIP failed', 'error'); }
+        });
+      }
+    } catch(e){ console.warn('wirePOMButtons failed', e); }
+  }
+
+  // ---- Initial wiring for basic UI controls ----
+  function wireCoreUI(){
+    try {
+      NS.$('#btnRender')?.addEventListener('click', NS.renderPreviewFromPaste);
+      NS.$('#btnClear')?.addEventListener('click', NS.clearAll);
+      NS.$('#btnOpenFile')?.addEventListener('click', ()=> NS.$('#hiddenFile') && NS.$('#hiddenFile').click());
+      const fileInput = NS.$('#hiddenFile');
+      if(fileInput){
+        fileInput.addEventListener('change', (ev)=>{
+          const f = ev.target.files && ev.target.files[0]; if(!f) return;
+          const reader = new FileReader();
+          reader.onload = function(e){ const p = NS.$('#pasteBox'); if(p) p.value = e.target.result; NS.renderPreviewFromPaste(); };
+          reader.readAsText(f);
+        });
+      }
+
+      // Wire sw group toggles
+      document.querySelectorAll('.sw').forEach(sw=>{
+        sw.addEventListener('click', ()=>{
+          const attr = Array.from(sw.attributes).find(a=>/^data-/.test(a.name));
+          if(!attr) return;
+          const name = attr.name;
+          document.querySelectorAll(`.sw[${name}]`).forEach(g=>g.classList.remove('active'));
+          sw.classList.add('active');
+        });
+      });
+
+      // Wire locator tab clicks
+      wireLocatorTabClicks();
+
+      // Wire POM buttons
+      wirePOMButtons();
+
+      // attach handlers to preview after initial small delay
+      setTimeout(()=>{ try { NS.attachHandlersToPreview(); } catch(e){} }, 600);
+    } catch(e){ console.error('wireCoreUI failed', e); }
+  }
+
+  // ---- Start ----
+  // populate default locators list if any
+  function startup(){
+    try { NS.fillLocatorList && NS.fillLocatorList('basic'); } catch(e){}
+    wireCoreUI();
+    console.info('offlineXpath.js loaded. Version:', NS.version);
+  }
+
+  // Run startup on next tick
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startup);
+  } else { startup(); }
+
+  // expose NS for debug
+  global.AdhyPatch = NS;
+
+})(window);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /* offlineXpath.js — merged robust build
    Version: adhy-offline-rebuild-2025-09
