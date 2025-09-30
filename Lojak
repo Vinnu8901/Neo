@@ -1,6 +1,6 @@
 <script>
 /* =========================
-   Adhyan Offline — full merged script with Custom tab
+   Adhyan Offline — full merged script with Custom tab (complete)
    ========================= */
 window.AdhyPatch = window.AdhyPatch || {};
 const NS = window.AdhyPatch;
@@ -35,6 +35,493 @@ NS.POM_CACHE = { pom:'', steps:'' };
 
   NS.copyToClipboard = async function(txt){
     try { await navigator.clipboard.writeText(txt); NS.showToast('Copied','success'); return true; }
+    catch(e){
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = txt; ta.style.position='fixed'; ta.style.left='-9999px';
+        document.body.appendChild(ta); ta.select(); document.execCommand && document.execCommand('copy'); ta.remove();
+        NS.showToast('Copied (fallback)','success'); return true;
+      } catch(err){ NS.showToast('Copy failed','error'); return false; }
+    }
+  };
+
+  NS.escapeHtml = s => (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  NS.xpathLiteral = s => `"${String(s||'').replace(/"/g,'\\"')}"`;
+  NS.cssSelectorFor = el => {
+    if(!el||!el.tagName) return '';
+    if(el.id) return '#'+el.id;
+    let sel = el.tagName.toLowerCase();
+    try {
+      if(el.classList && el.classList.length) sel += '.'+Array.from(el.classList).slice(0,2).map(c=>c.replace(/\s+/g,'')).join('.');
+      const nm = el.getAttribute && el.getAttribute('name');
+      if(nm) sel += `[name="${nm}"]`;
+    } catch(e){}
+    return sel;
+  };
+})();
+
+// -------------------- Phase 3: Preview helpers --------------------
+(function(){
+  function getPreview(){ return document.getElementById('preview'); }
+  function getDoc(){
+    const f = getPreview();
+    if(f && f.tagName && f.tagName.toLowerCase()==='iframe'){
+      try {
+        if(f.contentDocument) return f.contentDocument;
+        // on some browsers srcdoc not available as contentDocument until load -> fallback to parsed DOM
+      } catch(e){}
+      if(window._PARSER_DOC) return window._PARSER_DOC;
+      return document;
+    }
+    return window._PARSER_DOC || document;
+  }
+  NS.getPreviewDocument = getDoc;
+})();
+
+// -------------------- Phase 4: Highlight --------------------
+(function(){
+  function evalXPath(doc, xp){ try { return doc.evaluate(xp, doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE,null).singleNodeValue; }catch(e){return null;} }
+  NS.tryHighlightByXPath = function(xp){
+    if(!xp) return false;
+    // try preview doc first
+    try {
+      const doc = NS.getPreviewDocument();
+      const el = evalXPath(doc, xp);
+      if(el){
+        const prev = el.style.outline;
+        el.style.outline='3px solid #7c5cff';
+        try { el.scrollIntoView({behavior:'smooth', block:'center'}); } catch(e){}
+        setTimeout(()=>{ try{ el.style.outline = prev; }catch(e){} }, 1500);
+        return true;
+      }
+    } catch(e){}
+    // fallback: try top document
+    try {
+      const el2 = evalXPath(document, xp);
+      if(el2){ const prev = el2.style.outline; el2.style.outline='3px solid #7c5cff'; setTimeout(()=>el2.style.outline=prev,1500); return true; }
+    } catch(e){}
+    return false;
+  };
+})();
+
+// -------------------- Phase 5: Locator generators --------------------
+(function(){
+  function safeAttr(el,n){ try{return el.getAttribute(n);}catch(e){return null;} }
+  function getLabel(el){
+    try {
+      if(!el) return '';
+      const txt = (el.innerText || el.textContent || '').trim();
+      if(txt) return txt.slice(0,120);
+      const ph = safeAttr(el,'placeholder'); if(ph) return ph;
+      const alt = safeAttr(el,'alt'); if(alt) return alt;
+      return '';
+    } catch(e){ return ''; }
+  }
+
+  NS.genBasicXPath = el=>{
+    if(!el) return '';
+    if(el.id) return `//*[@id=${NS.xpathLiteral(el.id)}]`;
+    const tag = el.tagName.toLowerCase();
+    const label = getLabel(el);
+    if(label) return `//${tag}[contains(normalize-space(.), ${NS.xpathLiteral(label)})]`;
+    // short positional fallback
+    let cur = el; const parts = []; let depth=0;
+    while(cur && cur.nodeType===1 && depth<8){
+      const t = cur.tagName.toLowerCase();
+      let ix = 1; let sib = cur.previousElementSibling;
+      while(sib){ if(sib.tagName === cur.tagName) ix++; sib = sib.previousElementSibling; }
+      parts.unshift(ix>1? `${t}[${ix}]` : t);
+      cur = cur.parentElement; depth++;
+    }
+    return '//' + parts.join('/');
+  };
+
+  NS.genWildcardXPath = el=>{
+    if(!el) return '';
+    const label = getLabel(el);
+    if(label) return `//*[contains(normalize-space(.), ${NS.xpathLiteral(label)})]`;
+    const cls = (safeAttr(el,'class')||'').split(/\s+/).filter(Boolean)[0];
+    if(cls) return `//*[contains(concat(' ', normalize-space(@class), ' '), ${NS.xpathLiteral(' '+cls+' ')})]`;
+    return NS.genBasicXPath(el);
+  };
+
+  NS.genAxesXPath = el=>{
+    if(!el) return '';
+    const tag = el.tagName.toLowerCase();
+    const id = el.id;
+    if(id) return `//label[@for=${NS.xpathLiteral(id)}]/following::${tag}[1]`;
+    const label = getLabel(el);
+    if(label) return `//label[contains(normalize-space(.), ${NS.xpathLiteral(label)})]/following::${tag}[1]`;
+    return NS.genBasicXPath(el);
+  };
+
+  NS.genFunctionXPath = el=>{
+    if(!el) return '';
+    const tag = el.tagName.toLowerCase();
+    const ph = safeAttr(el,'placeholder'); if(ph) return `//${tag}[contains(@placeholder, ${NS.xpathLiteral(ph)})]`;
+    const ti = safeAttr(el,'title'); if(ti) return `//${tag}[contains(@title, ${NS.xpathLiteral(ti)})]`;
+    const aria = safeAttr(el,'aria-label'); if(aria) return `//${tag}[@aria-label=${NS.xpathLiteral(aria)}]`;
+    return NS.genBasicXPath(el);
+  };
+
+  NS.genSalesforceXPath = el=>{
+    if(!el) return '';
+    const tag = el.tagName.toLowerCase();
+    if(safeAttr(el,'data-qa-locator')) return `//${tag}[@data-qa-locator=${NS.xpathLiteral(safeAttr(el,'data-qa-locator'))}]`;
+    if(safeAttr(el,'data-id')) return `//${tag}[@data-id=${NS.xpathLiteral(safeAttr(el,'data-id'))}]`;
+    return '';
+  };
+
+  NS.genPegaXPath = el=>{
+    if(!el) return '';
+    const tag = el.tagName.toLowerCase();
+    if(safeAttr(el,'data-test-id')) return `//${tag}[@data-test-id=${NS.xpathLiteral(safeAttr(el,'data-test-id'))}]`;
+    if(safeAttr(el,'data-ctl')) return `//${tag}[@data-ctl=${NS.xpathLiteral(safeAttr(el,'data-ctl'))}]`;
+    return '';
+  };
+
+  NS.generateLocatorsForElement = function(el){
+    if(!el) return null;
+    return {
+      tag: el.tagName.toLowerCase(),
+      text: getLabel(el) || '',
+      xpaths:{
+        basic: NS.genBasicXPath(el),
+        wildcards: NS.genWildcardXPath(el),
+        axes: NS.genAxesXPath(el),
+        functions: NS.genFunctionXPath(el),
+        salesforce: NS.genSalesforceXPath(el),
+        pega: NS.genPegaXPath(el)
+      },
+      css: NS.cssSelectorFor(el)
+    };
+  };
+})();
+
+// -------------------- Phase 6: Extract all locators --------------------
+(function(){
+  function collect(doc){
+    try {
+      return Array.from(doc.querySelectorAll('input:not([type=hidden]),button,a,select,textarea,[role=button],[data-qa-locator],[data-test-id]'));
+    } catch(e){ return []; }
+  }
+  NS.extractAllLocators = function(){
+    const doc = NS.getPreviewDocument();
+    const elems = collect(doc);
+    NS.CURRENT_LOCATORS = elems.map(el => NS.generateLocatorsForElement(el)).filter(Boolean);
+    // preserve existing custom if any (do not overwrite)
+    const activeChip = NS.$('.chip.active')?.dataset?.paneltab || 'basic';
+    if(activeChip === 'custom' && NS.CURRENT_CUSTOM){
+      NS.showCustomLocators(NS.CURRENT_CUSTOM);
+    } else {
+      NS.fillLocatorList(activeChip);
+    }
+    NS.showToast(`Extracted ${NS.CURRENT_LOCATORS.length}`);
+    return NS.CURRENT_LOCATORS;
+  };
+})();
+
+// -------------------- Phase 7: Locator List UI --------------------
+(function(){
+  function pickVal(loc,p){ return (loc && loc.xpaths && loc.xpaths[p]) || loc.css || ''; }
+  NS.fillLocatorList = function(panel='basic'){
+    panel = panel || 'basic';
+    const box = NS.$('#locList');
+    if(!box) return;
+    box.innerHTML = '';
+    const list = NS.CURRENT_LOCATORS || [];
+    if(!list.length){ box.innerHTML = '<div class="small">No locators. Paste/Render to populate.</div>'; return; }
+    list.forEach((loc, i)=>{
+      const val = pickVal(loc,panel) || '';
+      const row = document.createElement('div'); row.className='loc-row';
+      const left = document.createElement('div'); left.style.display='flex'; left.style.alignItems='center'; left.style.gap='8px';
+      const badge = document.createElement('span'); badge.className='badge'; badge.textContent = loc.tag || 'el';
+      const txt = document.createElement('div'); txt.style.minWidth='0'; txt.innerHTML = `<div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${NS.escapeHtml(loc.text||'(no text)')}</div><div class="small" style="color:#6b7280">${NS.escapeHtml(loc.css||'')}</div>`;
+      left.appendChild(badge); left.appendChild(txt);
+
+      const mid = document.createElement('div'); mid.className='mono'; mid.style.flex='1'; mid.style.whiteSpace='nowrap'; mid.style.overflow='hidden'; mid.style.textOverflow='ellipsis'; mid.textContent = val;
+      const act = document.createElement('div'); act.style.display='flex'; act.style.gap='6px';
+      const copyBtn = document.createElement('button'); copyBtn.className='btn'; copyBtn.textContent='Copy';
+      const hiBtn = document.createElement('button'); hiBtn.className='btn'; hiBtn.textContent='Highlight';
+      act.appendChild(copyBtn); act.appendChild(hiBtn);
+
+      row.appendChild(left); row.appendChild(mid); row.appendChild(act);
+
+      // row click: copy + highlight
+      row.addEventListener('click', async (e)=>{
+        if(e.target && (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT')) return;
+        const v = mid.textContent || '';
+        if(!v) return NS.showToast('No locator','error');
+        NS.tryHighlightByXPath(v);
+        await NS.copyToClipboard(v);
+        NS.showToast('Copied & highlighted');
+      });
+
+      copyBtn.addEventListener('click', async (ev)=>{ ev.stopPropagation(); const v = mid.textContent || ''; if(v) await NS.copyToClipboard(v); });
+      hiBtn.addEventListener('click', (ev)=>{ ev.stopPropagation(); const v = mid.textContent || ''; if(v) NS.tryHighlightByXPath(v); });
+
+      box.appendChild(row);
+    });
+  };
+
+  // wire chip clicks
+  (function wireChips(){
+    const tabs = NS.$('#locatorTabs');
+    if(!tabs) return;
+    tabs.addEventListener('click', (e)=>{
+      const chip = e.target.closest('.chip');
+      if(!chip) return;
+      // toggle active
+      NS.$$('.chip').forEach(c=>c.classList.remove('active'));
+      chip.classList.add('active');
+      const panel = chip.dataset.paneltab || 'basic';
+      if(panel === 'custom'){
+        if(NS.CURRENT_CUSTOM) NS.showCustomLocators(NS.CURRENT_CUSTOM);
+        else { NS.$('#locList').innerHTML = '<div class="small">Click an element in preview to populate Custom</div>'; }
+      } else {
+        NS.fillLocatorList(panel);
+      }
+    });
+  })();
+})();
+
+// -------------------- Phase 8: Interactive preview click → Custom --------------------
+(function(){
+  function onPreviewClick(e){
+    try {
+      e.preventDefault && e.preventDefault();
+      e.stopPropagation && e.stopPropagation();
+      const el = e.target;
+      if(!el) return;
+      const loc = NS.generateLocatorsForElement(el);
+      if(!loc) return;
+      NS.CURRENT_CUSTOM = loc;
+      // switch to custom tab visually
+      const customChip = NS.$('.chip[data-paneltab="custom"]');
+      if(customChip){ NS.$$('.chip').forEach(c=>c.classList.remove('active')); customChip.classList.add('active'); }
+      NS.showCustomLocators(loc);
+      // append snippet to output
+      const out = NS.$('#output');
+      if(out){
+        const snippet = [
+          `// Captured: ${loc.tag} ${loc.text?(' - '+loc.text):''}`,
+          `// XPATH (basic): ${loc.xpaths.basic}`,
+          `// XPATH (wildcards): ${loc.xpaths.wildcards}`,
+          `// CSS: ${loc.css}`
+        ].join('\n');
+        out.value = (out.value ? out.value + '\n\n' : '') + snippet;
+      }
+      NS.showToast('Captured element to Custom', 'success');
+    } catch(err){ console.warn('preview click fail', err); }
+  }
+
+  NS.attachHandlersToPreview = function(){
+    try {
+      // detach any previous handlers saved by attachPreviewHandler mechanism
+      try { NS.detachAllPreviewHandlers && NS.detachAllPreviewHandlers(); } catch(e){}
+      const iframe = NS.$('#preview');
+      if(iframe && iframe.tagName && iframe.tagName.toLowerCase()==='iframe'){
+        // attach after load (safe guarded)
+        function attachToDoc(doc){
+          if(!doc) return;
+          try { doc.addEventListener('click', onPreviewClick, true); NS.attachPreviewHandler && NS.attachPreviewHandler(doc, 'click', onPreviewClick); } catch(e){ console.warn('attachToDoc failed', e); }
+        }
+        try {
+          if(iframe.contentDocument && (iframe.contentDocument.readyState === 'complete' || iframe.contentDocument.readyState === 'interactive')){
+            attachToDoc(iframe.contentDocument);
+          } else {
+            iframe.addEventListener('load', ()=>{ try{ attachToDoc(iframe.contentDocument); }catch(e){} }, {once:true});
+          }
+        } catch(e){
+          // cross-origin -> fallback: parse DOM has no clickable live elements; we still support parsed DOM via _PARSER_DOC
+          if(window._PARSER_DOC) try { attachToDoc(window._PARSER_DOC); } catch(e){}
+        }
+      } else {
+        // preview not iframe — attach to parsed doc or top
+        try { const doc = NS.getPreviewDocument(); doc.addEventListener('click', onPreviewClick, true); NS.attachPreviewHandler && NS.attachPreviewHandler(doc, 'click', onPreviewClick); } catch(e){}
+      }
+    } catch(e){ console.warn('attachHandlersToPreview error', e); }
+  };
+
+  NS.showCustomLocators = function(loc){
+    const box = NS.$('#locList');
+    if(!box) return;
+    box.innerHTML = '';
+    const strategies = ['basic','wildcards','axes','functions','salesforce','pega'];
+    strategies.forEach(k=>{
+      const v = (loc.xpaths && loc.xpaths[k]) || '';
+      const row = document.createElement('div'); row.className='loc-row';
+      row.innerHTML = `<div style="width:120px;font-weight:700">${NS.escapeHtml(k.toUpperCase())}</div><div class="mono" style="flex:1">${NS.escapeHtml(v||'(none)')}</div><div style="margin-left:8px"><button class="btn">Copy</button> <button class="btn">Highlight</button></div>`;
+      const copyBtn = row.querySelector('.btn');
+      // copy first button, highlight second (wired simple)
+      row.querySelectorAll('.btn')[0].addEventListener('click', async (ev)=>{ ev.stopPropagation(); if(v) await NS.copyToClipboard(v); });
+      row.querySelectorAll('.btn')[1].addEventListener('click', (ev)=>{ ev.stopPropagation(); if(v) NS.tryHighlightByXPath(v); });
+      row.addEventListener('click', ()=>{ if(v) { NS.tryHighlightByXPath(v); NS.copyToClipboard(v); } });
+      box.appendChild(row);
+    });
+    // CSS row
+    const cssRow = document.createElement('div'); cssRow.className='loc-row';
+    cssRow.innerHTML = `<div style="width:120px;font-weight:700">CSS</div><div class="mono" style="flex:1">${NS.escapeHtml(loc.css||'(none)')}</div><div style="margin-left:8px"><button class="btn">Copy</button></div>`;
+    cssRow.querySelector('.btn').addEventListener('click', async ()=>{ await NS.copyToClipboard(loc.css||''); });
+    box.appendChild(cssRow);
+  };
+})();
+
+// -------------------- Phase 9: Render, Clear, File open, UI wiring --------------------
+(function(){
+  NS.renderPreview = function(){
+    try {
+      const txt = (NS.$('#pasteBox') && NS.$('#pasteBox').value) || '';
+      NS.CURRENT_HTML = txt;
+      const iframe = NS.$('#preview');
+      const clean = txt.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi,'');
+      if(iframe && iframe.tagName && iframe.tagName.toLowerCase()==='iframe'){
+        try { iframe.srcdoc = clean; } catch(e){ iframe.setAttribute('srcdoc', clean); }
+      }
+      try { window._PARSER_DOC = (new DOMParser()).parseFromString(txt, 'text/html'); } catch(e){}
+      setTimeout(()=>{ try { NS.attachHandlersToPreview(); NS.extractAllLocators(); } catch(e){} }, 300);
+      NS.showToast('Preview rendered','success');
+    } catch(e){ console.error(e); NS.showToast('Render failed','error'); }
+  };
+
+  NS.clearAll = function(){
+    try {
+      const paste = NS.$('#pasteBox'); if(paste) paste.value = '';
+      const iframe = NS.$('#preview'); if(iframe && iframe.tagName && iframe.tagName.toLowerCase()==='iframe') iframe.srcdoc = '<body><h3>Cleared</h3></body>';
+      NS.CURRENT_HTML = ''; NS.CURRENT_DOC = null; NS.CURRENT_LOCATORS = []; NS.CURRENT_CUSTOM = null;
+      NS.$('#locList') && (NS.$('#locList').innerHTML = '');
+      NS.$('#output') && (NS.$('#output').value = '');
+      NS.showToast('Cleared','info');
+    } catch(e){ console.warn(e); }
+  };
+
+  // wire buttons
+  NS.$('#btnRender')?.addEventListener('click', NS.renderPreview);
+  NS.$('#btnClear')?.addEventListener('click', NS.clearAll);
+
+  // file open wiring
+  NS.$('#btnOpenFile')?.addEventListener('click', ()=> NS.$('#hiddenFile')?.click());
+  NS.$('#hiddenFile')?.addEventListener('change', (ev)=>{
+    const f = ev.target.files && ev.target.files[0]; if(!f) return;
+    const reader = new FileReader();
+    reader.onload = e => { NS.$('#pasteBox') && (NS.$('#pasteBox').value = e.target.result); NS.renderPreview(); };
+    reader.readAsText(f);
+  });
+
+  // dropzone support
+  const dz = NS.$('#dropZone');
+  if(dz){
+    dz.addEventListener('dragover', (e)=>{ e.preventDefault(); dz.style.opacity = '0.8'; });
+    dz.addEventListener('dragleave', (e)=>{ dz.style.opacity = '1'; });
+    dz.addEventListener('drop', (e)=>{ e.preventDefault(); dz.style.opacity = '1'; const f = (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]); if(f){ const r = new FileReader(); r.onload = ev => { NS.$('#pasteBox').value = ev.target.result; NS.renderPreview(); }; r.readAsText(f); } });
+  }
+
+  // mode chips (POM/API) — match your left card IDs
+  const modePOM = NS.$('#modePOM'), modeAPI = NS.$('#modeAPI');
+  if(modePOM && modeAPI){
+    modePOM.addEventListener('click', ()=>{ modePOM.classList.add('active'); modeAPI.classList.remove('active'); NS.$('#pomLeftCard')?.classList.remove('hidden'); NS.$('#apiLeftCard')?.classList.add('hidden'); });
+    modeAPI.addEventListener('click', ()=>{ modeAPI.classList.add('active'); modePOM.classList.remove('active'); NS.$('#apiLeftCard')?.classList.remove('hidden'); NS.$('#pomLeftCard')?.classList.add('hidden'); });
+  }
+
+  // wire .sw toggles (framework/language/runner)
+  (function wireSwGroups(){
+    const sws = document.querySelectorAll('.sw');
+    sws.forEach(sw=>{
+      sw.addEventListener('click', ()=>{
+        const data = Array.from(sw.attributes).find(a=>/^data-/.test(a.name));
+        if(!data) return;
+        const attrName = data.name;
+        document.querySelectorAll(`.sw[${attrName}]`).forEach(g=>g.classList.remove('active'));
+        sw.classList.add('active');
+      });
+    });
+  })();
+
+  // ensure Download Output button
+  (function ensureDownloadOutputButton(){
+    const out = NS.$('#output');
+    if(!out) return;
+    if(NS.$('#btnDownloadOutput')) return;
+    const btn = document.createElement('button'); btn.id='btnDownloadOutput'; btn.className='btn'; btn.textContent='Download Output';
+    out.parentNode.insertBefore(btn, out.nextSibling);
+    btn.addEventListener('click', ()=>{
+      const txt = out.value || '';
+      if(!txt) return NS.showToast('Nothing to download','error');
+      const blob = new Blob([txt], {type:'text/plain'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'adhy-output.txt'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+      NS.showToast('Download started','success');
+    });
+  })();
+
+  // POM preview generation (preview-only)
+  NS.$('#btnGenPOM')?.addEventListener('click', ()=>{
+    try {
+      const fw = document.querySelector('.sw[data-fw].active')?.dataset?.fw || 'selenium';
+      const lang = document.querySelector('.sw[data-lang].active')?.dataset?.lang || 'java';
+      // choose source locators: custom (if present) else all current
+      const locs = NS.CURRENT_CUSTOM ? [NS.CURRENT_CUSTOM] : (NS.CURRENT_LOCATORS || []);
+      const normalized = locs.map((l,i)=> {
+        const name = (l.text || l.tag || `elem${i+1}`).toString().replace(/\s+/g,'_').replace(/[^A-Za-z0-9_]/g,'').slice(0,40);
+        const xpath = (l.xpaths && (l.xpaths.basic || l.xpaths.wildcards)) || l.css || '';
+        return { name: name || `elem${i+1}`, xpath };
+      });
+      // build simple preview text
+      let outTxt = `// Framework: ${fw}  Language: ${lang}\n\n`;
+      normalized.forEach(n=>{
+        outTxt += `@FindBy(xpath = "${n.xpath.replace(/"/g,'\\"')}")\nprivate WebElement ${n.name};\n\n`;
+      });
+      NS.$('#output') && (NS.$('#output').value = outTxt);
+      NS.showToast('POM preview generated','success');
+    } catch(e){ console.error(e); NS.showToast('POM generate failed','error'); }
+  });
+
+  // Zip download optional: btnZipAll uses JSZip if present (kept explicit)
+  NS.$('#btnZipAll')?.addEventListener('click', async ()=>{
+    if(!window.JSZip){ NS.showToast('JSZip required','error'); return; }
+    try {
+      const fw = document.querySelector('.sw[data-fw].active')?.dataset?.fw || 'selenium';
+      const lang = document.querySelector('.sw[data-lang].active')?.dataset?.lang || 'java';
+      const locs = NS.CURRENT_CUSTOM ? [NS.CURRENT_CUSTOM] : (NS.CURRENT_LOCATORS || []);
+      const normalized = locs.map((l,i)=> {
+        const name = (l.text || l.tag || `elem${i+1}`).toString().replace(/\s+/g,'_').replace(/[^A-Za-z0-9_]/g,'').slice(0,40);
+        const xpath = (l.xpaths && (l.xpaths.basic || l.xpaths.wildcards)) || l.css || '';
+        return { name: name || `elem${i+1}`, xpath };
+      });
+      const jszip = new JSZip();
+      const content = normalized.map(n=>`${n.name}: ${n.xpath}`).join('\n');
+      jszip.file('locators.txt', content);
+      const blob = await jszip.generateAsync({type:'blob'});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `adhy-artifacts-${fw}-${lang}.zip`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+      NS.showToast('ZIP downloaded','success');
+    } catch(e){ console.error(e); NS.showToast('ZIP failed','error'); }
+  });
+
+  // initial attach after load
+  setTimeout(()=>{ try { NS.attachHandlersToPreview && NS.attachHandlersToPreview(); } catch(e){} }, 600);
+})();
+
+// -------------------- Phase 10: Startup --------------------
+(function(){
+  try { NS.fillLocatorList && NS.fillLocatorList('basic'); } catch(e){}
+  console.info('AdhyPatch loaded. Version:', NS.version);
+})();
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+try { await navigator.clipboard.writeText(txt); NS.showToast('Copied','success'); return true; }
     catch(e){ console.warn(e); return false; }
   };
 
