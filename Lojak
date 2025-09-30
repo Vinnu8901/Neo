@@ -1,4 +1,482 @@
 <script>
+/* === AdhyPatch — Full merged script: Custom-tab auto-activate & append on preview click === */
+window.AdhyPatch = window.AdhyPatch || {};
+const NS = window.AdhyPatch;
+
+// Minimal safe init
+NS.version = NS.version || 'adhy-custom-3.1';
+NS.CURRENT_LOCATORS = NS.CURRENT_LOCATORS || [];
+NS.CUSTOM_LIST = NS.CUSTOM_LIST || [];
+
+// --------------------------------- Utilities ---------------------------------
+(function(){
+  NS.$ = NS.$ || ((s, root=document) => { try { return (root||document).querySelector(s); } catch(e){ return null; }});
+  NS.$$ = NS.$$ || ((s, root=document) => { try { return Array.from((root||document).querySelectorAll(s)); } catch(e){ return []; }});
+
+  NS.showToast = NS.showToast || function(msg, type='info'){
+    try {
+      let t = document.getElementById('__adhy_toast');
+      if(!t){
+        t = document.createElement('div');
+        t.id = '__adhy_toast';
+        t.style.cssText = 'position:fixed;right:16px;bottom:16px;padding:8px 12px;border-radius:8px;background:rgba(0,0,0,0.78);color:#fff;z-index:2147483647;font-family:system-ui,Segoe UI,Roboto;opacity:1;transition:opacity .18s';
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+      t.style.background = (type==='error')? '#b91c1c' : (type==='success')? '#047857' : 'rgba(0,0,0,0.78)';
+      t.style.opacity = '1';
+      clearTimeout(t._t);
+      t._t = setTimeout(()=> { try{ t.style.opacity = '0'; } catch(e){} }, 1500);
+    } catch(e){ console.log(msg); }
+  };
+
+  NS.copyToClipboard = NS.copyToClipboard || async function(text){
+    try {
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        await navigator.clipboard.writeText(text);
+        NS.showToast('Copied', 'success');
+        return true;
+      }
+    } catch(e){}
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand && document.execCommand('copy');
+      document.body.removeChild(ta);
+      NS.showToast('Copied (fallback)', 'success');
+      return true;
+    } catch(e){
+      NS.showToast('Copy failed', 'error');
+      return false;
+    }
+  };
+
+  NS.escapeHtml = NS.escapeHtml || function(s){ return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+  NS.xpathLiteral = NS.xpathLiteral || function(s){ s = String(s||''); if (s.indexOf('"') === -1) return `"${s}"`; if (s.indexOf("'") === -1) return `'${s}'`; return `"${s.replace(/"/g,'\\"')}"`; };
+  NS.cssSelectorFor = NS.cssSelectorFor || function(el){ if(!el||!el.tagName) return ''; if(el.id) return '#'+el.id; let sel = el.tagName.toLowerCase(); if(el.classList && el.classList.length) sel += '.' + Array.from(el.classList).slice(0,3).join('.'); if(el.getAttribute && el.getAttribute('name')) sel += `[name="${el.getAttribute('name')}"]`; return sel; };
+})();
+
+// --------------------------- Preview helpers ---------------------------
+(function(){
+  NS.getPreviewElement = function(){
+    return NS.$('#preview') || document.querySelector('iframe#preview') || document.querySelector('iframe') || null;
+  };
+  NS.getPreviewDocument = function(){
+    const p = NS.getPreviewElement();
+    if(!p) return window._PARSER_DOC || document;
+    try { if(p.tagName && p.tagName.toLowerCase()==='iframe' && p.contentDocument) return p.contentDocument; } catch(e){}
+    if(window._PARSER_DOC) return window._PARSER_DOC;
+    return document;
+  };
+})();
+
+// ------------------------- Locator generators -------------------------
+(function(){
+  function safeAttr(el, name){ try { return el.getAttribute ? el.getAttribute(name) : null; } catch(e){ return null; } }
+  function getLabelFor(el){
+    try {
+      if(!el) return '';
+      if(el.id){
+        try { const lab = (document.querySelector && document.querySelector(`label[for="${el.id}"]`)); if(lab && lab.textContent) return lab.textContent.trim(); }catch(e){}
+      }
+      const p = el.closest && el.closest('label'); if(p && p.textContent) return p.textContent.trim();
+      const t = (el.innerText || el.textContent || '').trim();
+      if(t) return t.slice(0,160);
+      const ph = safeAttr(el,'placeholder'); if(ph) return ph;
+      return '';
+    } catch(e){ return ''; }
+  }
+
+  NS.genBasicXPath = function(el){
+    if(!el) return '';
+    if(el.id) return `//*[@id=${NS.xpathLiteral(el.id)}]`;
+    const tag = el.tagName.toLowerCase();
+    const name = safeAttr(el,'name'); if(name) return `//${tag}[@name=${NS.xpathLiteral(name)}]`;
+    const label = getLabelFor(el); if(label) return `//${tag}[contains(normalize-space(.), ${NS.xpathLiteral(label)})]`;
+    // fallback short path
+    const parts=[]; let cur=el; let depth=0;
+    while(cur && cur.nodeType===1 && depth<8){
+      const t = cur.tagName.toLowerCase();
+      let ix = 1; let sib = cur.previousElementSibling;
+      while(sib){ if(sib.tagName === cur.tagName) ix++; sib = sib.previousElementSibling; }
+      parts.unshift(`${t}${ix>1?`[${ix}]`:''}`); cur = cur.parentElement; depth++;
+    }
+    return '//' + parts.join('/');
+  };
+
+  NS.genWildcardXPath = function(el){
+    if(!el) return '';
+    if(el.id) return `//*[@id=${NS.xpathLiteral(el.id)}]`;
+    const label = getLabelFor(el);
+    if(label) return `//*[contains(normalize-space(.), ${NS.xpathLiteral(label)})]`;
+    const cls = safeAttr(el,'class') || '';
+    if(cls) {
+      const first = cls.split(/\s+/).filter(Boolean)[0];
+      if(first) return `//*[contains(concat(' ', normalize-space(@class), ' '), ${NS.xpathLiteral(' '+first+' ')})]`;
+    }
+    return NS.genBasicXPath(el);
+  };
+
+  NS.genAxesXPath = function(el){
+    if(!el) return '';
+    const tag = el.tagName.toLowerCase();
+    const id = el.id;
+    if(id) return `//label[@for=${NS.xpathLiteral(id)}]/following::${tag}[1]`;
+    const lab = getLabelFor(el);
+    if(lab) return `//label[contains(normalize-space(.), ${NS.xpathLiteral(lab)})]/following::${tag}[1]`;
+    return NS.genBasicXPath(el);
+  };
+
+  NS.genFunctionXPath = function(el){
+    if(!el) return NS.genBasicXPath(el);
+    const tag = el.tagName.toLowerCase();
+    const ph = safeAttr(el,'placeholder'); if(ph) return `//${tag}[contains(@placeholder, ${NS.xpathLiteral(ph)})]`;
+    const aria = safeAttr(el,'aria-label'); if(aria) return `//${tag}[@aria-label=${NS.xpathLiteral(aria)}]`;
+    return NS.genBasicXPath(el);
+  };
+
+  NS.genSalesforceXPath = function(el){
+    if(!el) return '';
+    if(safeAttr(el,'data-qa-locator')) return `//*[@data-qa-locator=${NS.xpathLiteral(safeAttr(el,'data-qa-locator'))}]`;
+    if(safeAttr(el,'data-id')) return `//*[@data-id=${NS.xpathLiteral(safeAttr(el,'data-id'))}]`;
+    return '';
+  };
+
+  NS.genPegaXPath = function(el){
+    if(!el) return '';
+    if(safeAttr(el,'data-test-id')) return `//*[@data-test-id=${NS.xpathLiteral(safeAttr(el,'data-test-id'))}]`;
+    if(safeAttr(el,'data-ctl')) return `//*[@data-ctl=${NS.xpathLiteral(safeAttr(el,'data-ctl'))}]`;
+    return '';
+  };
+
+  NS.generateLocatorsForElement = function(el){
+    if(!el) return null;
+    return {
+      tag: el.tagName.toLowerCase(),
+      text: getLabelFor(el) || '',
+      xpaths: {
+        basic: NS.genBasicXPath(el),
+        wildcards: NS.genWildcardXPath(el),
+        axes: NS.genAxesXPath(el),
+        functions: NS.genFunctionXPath(el),
+        salesforce: NS.genSalesforceXPath(el),
+        pega: NS.genPegaXPath(el)
+      },
+      css: NS.cssSelectorFor(el)
+    };
+  };
+})();
+
+// -------------------- Custom list UI helpers --------------------
+(function(){
+  // ensure Custom tab exists (if not, create a 'custom' chip)
+  function ensureCustomChip(){
+    let customChip = NS.$('.chip[data-paneltab="custom"]');
+    if(!customChip){
+      const tabs = NS.$('#locatorTabs');
+      if(!tabs) return null;
+      customChip = document.createElement('div');
+      customChip.className = 'chip';
+      customChip.dataset.paneltab = 'custom';
+      customChip.textContent = 'Custom';
+      tabs.appendChild(customChip);
+      customChip.addEventListener('click', ()=>{ activatePanel('custom'); });
+    }
+    return customChip;
+  }
+
+  function activatePanel(name){
+    NS.$$('.chip').forEach(c=>c.classList.remove('active'));
+    const chip = NS.$(`.chip[data-paneltab="${name}"]`);
+    if(chip) chip.classList.add('active');
+    // if switching to non-custom, we can re-render main list. If switching to custom, show custom.
+    if(name === 'custom') {
+      renderCustomList();
+    } else {
+      // show default extraction for the panel name if available
+      NS.fillLocatorList && NS.fillLocatorList(name);
+    }
+  }
+
+  // render single 'loc-row' (strategy row) element
+  function buildRow(idx, strategyLabel, value){
+    const row = document.createElement('div');
+    row.className = 'loc-row';
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '8px';
+    // left badge (index)
+    const badge = document.createElement('div'); badge.className='badge'; badge.textContent = idx+1;
+    // strategy label
+    const lbl = document.createElement('div'); lbl.style.width='110px'; lbl.style.fontWeight='700'; lbl.textContent = strategyLabel;
+    // value
+    const vdiv = document.createElement('div'); vdiv.className='mono'; vdiv.style.flex='1'; vdiv.style.wordBreak='break-word'; vdiv.style.whiteSpace='pre-wrap'; vdiv.textContent = value || '(none)';
+    // actions
+    const copy = document.createElement('button'); copy.className='btn'; copy.textContent='Copy'; copy.style.width='72px';
+    const hi = document.createElement('button'); hi.className='btn'; hi.textContent='Highlight'; hi.style.width='90px';
+    // row click = copy + highlight
+    row.addEventListener('click', async (e) => {
+      if(e.target && e.target.tagName === 'BUTTON') return; // let buttons handle it
+      if(!vdiv.textContent) return;
+      await NS.copyToClipboard(vdiv.textContent);
+      NS.tryHighlightByXPath && NS.tryHighlightByXPath(vdiv.textContent);
+    });
+    // buttons
+    copy.addEventListener('click', async (ev) => { ev.stopPropagation(); if(!vdiv.textContent) return; await NS.copyToClipboard(vdiv.textContent); });
+    hi.addEventListener('click', (ev) => { ev.stopPropagation(); if(!vdiv.textContent) return; NS.tryHighlightByXPath && NS.tryHighlightByXPath(vdiv.textContent); });
+
+    row.appendChild(badge); row.appendChild(lbl); row.appendChild(vdiv); row.appendChild(copy); row.appendChild(hi);
+    return row;
+  }
+
+  // render entire custom list (stacked entries, each showing strategies)
+  function renderCustomList(){
+    const box = NS.$('#locList');
+    if(!box) return;
+    box.innerHTML = '';
+    if(!Array.isArray(NS.CUSTOM_LIST) || NS.CUSTOM_LIST.length === 0){
+      box.innerHTML = '<div class="small">No custom entries. Click elements in the preview to add them.</div>';
+      return;
+    }
+    NS.CUSTOM_LIST.forEach((loc, idx) => {
+      // container header for this captured element
+      const header = document.createElement('div');
+      header.style.padding = '8px'; header.style.borderBottom = '1px solid #e6ecf5'; header.style.background = '#f7f9fc';
+      header.innerHTML = `<div style="font-weight:800">${NS.escapeHtml(loc.text||loc.tag||('Element '+(idx+1)))}</div><div class="small" style="color:#6b7280">${NS.escapeHtml(loc.css||'')}</div>`;
+      box.appendChild(header);
+      // strategies
+      const strategies = ['basic','wildcards','axes','functions','salesforce','pega'];
+      strategies.forEach(s=>{
+        const v = (loc.xpaths && loc.xpaths[s]) || '';
+        const row = buildRow(idx, s.toUpperCase(), v || '(none)');
+        box.appendChild(row);
+      });
+      // CSS row
+      const cssRow = buildRow(idx, 'CSS', loc.css || '(none)');
+      box.appendChild(cssRow);
+    });
+    // update loc-count if present
+    const count = NS.$('#loc-count'); if(count) count.textContent = `${NS.CUSTOM_LIST.length} custom element(s)`;
+  }
+
+  // public helpers
+  NS.ensureCustomChip = ensureCustomChip;
+  NS.activatePanel = activatePanel;
+  NS.renderCustomList = renderCustomList;
+
+  // initialize: ensure chip exists and bind default click for existing chips
+  setTimeout(()=>{
+    NS.ensureCustomChip();
+    // wire tab clicks to render correct lists
+    NS.$$('.chip').forEach(c=>{
+      if(c._bound) return;
+      c._bound = true;
+      c.addEventListener('click', ()=>{
+        const n = c.dataset.paneltab || null;
+        if(n) NS.activatePanel(n);
+      });
+    });
+  }, 80);
+})();
+
+// -------------------- Attach handlers to preview & click flow --------------------
+(function(){
+  // helper to attach event listeners to preview doc (iframe or parsed doc)
+  function attachToPreviewDoc(){
+    const previewEl = NS.getPreviewElement();
+    if(!previewEl) return;
+    try {
+      if(previewEl.tagName && previewEl.tagName.toLowerCase() === 'iframe'){
+        // try contentDocument
+        try {
+          const pd = previewEl.contentDocument;
+          if(pd){
+            // remove previous listeners we added on that doc (by flag)
+            if(pd.__adhy_click_attached) return;
+            pd.__adhy_click_attached = true;
+            pd.addEventListener('click', previewClickHandler, true);
+          } else {
+            // attach on load
+            previewEl.addEventListener('load', ()=> {
+              try { const pd2 = previewEl.contentDocument; if(pd2 && !pd2.__adhy_click_attached){ pd2.__adhy_click_attached = true; pd2.addEventListener('click', previewClickHandler, true); } } catch(e){}
+            }, {once:true});
+          }
+        } catch(e){
+          // cross-origin - cannot attach; rely on parsed DOM fallback
+          console.warn('Preview iframe cross-origin — click attach skipped');
+        }
+      } else {
+        // it's inline element (rare); attach to its document
+        const pd = NS.getPreviewDocument();
+        if(pd && !pd.__adhy_click_attached){
+          pd.__adhy_click_attached = true;
+          pd.addEventListener('click', previewClickHandler, true);
+        }
+      }
+    } catch(e){ console.warn('attachToPreviewDoc failed', e); }
+  }
+
+  // click handler inside preview document
+  function previewClickHandler(e){
+    try {
+      e.preventDefault && e.preventDefault();
+      e.stopPropagation && e.stopPropagation();
+      const el = e.target;
+      if(!el || el.nodeType !== 1) return;
+      const loc = NS.generateLocatorsForElement(el);
+      if(!loc) return;
+      // push into custom list
+      NS.CUSTOM_LIST = NS.CUSTOM_LIST || [];
+      NS.CUSTOM_LIST.push(loc);
+      // ensure custom chip exists and activate it
+      const customChip = NS.ensureCustomChip();
+      if(customChip){
+        // activate custom
+        NS.activatePanel('custom');
+      }
+      // render custom list
+      NS.renderCustomList();
+      NS.showToast('Captured element into Custom', 'success');
+      return false;
+    } catch(err){
+      console.error('previewClickHandler error', err);
+      NS.showToast('Capture failed', 'error');
+    }
+  }
+
+  // public attach function
+  NS.attachHandlersToPreview = function(){
+    attachToPreviewDoc();
+  };
+
+  // attach on startup (if preview exists)
+  setTimeout(()=>{ NS.attachHandlersToPreview(); }, 300);
+})();
+
+// -------------------- Minimal extraction & fill list (basic behavior preserved) --------------------
+(function(){
+  function collectCandidateElements(doc){
+    try {
+      const selectors = ['input:not([type="hidden"])','button','a','select','textarea','[role="button"]','[data-qa-locator]','[data-test-id]','[data-ctl]','lightning-input','lightning-button'];
+      return Array.from((doc || document).querySelectorAll(selectors.join(','))).filter(el=>{
+        try {
+          if(!el) return false;
+          if(el.hasAttribute && el.hasAttribute('hidden')) return false;
+          const s = el.getAttribute && el.getAttribute('style') || '';
+          if(/display\s*:\s*none|visibility\s*:\s*hidden/.test(s)) return false;
+          if(el.tagName && el.tagName.toLowerCase()==='script') return false;
+          return true;
+        } catch(e){ return false; }
+      });
+    } catch(e){ return []; }
+  }
+
+  NS.extractAllLocators = function(){
+    const doc = NS.getPreviewDocument();
+    const elems = collectCandidateElements(doc);
+    NS.CURRENT_LOCATORS = elems.map(el => NS.generateLocatorsForElement(el));
+    // default to basic panel rendering if custom is not active
+    const active = NS.$('.chip.active')?.dataset?.paneltab || 'basic';
+    if(active !== 'custom'){
+      NS.fillLocatorList && NS.fillLocatorList(active);
+    } else {
+      NS.renderCustomList();
+    }
+    NS.showToast(`Extracted ${NS.CURRENT_LOCATORS.length} elements`);
+    return NS.CURRENT_LOCATORS;
+  };
+
+  NS.fillLocatorList = function(panel='basic'){
+    const container = NS.$('#locList');
+    if(!container) return;
+    container.innerHTML = '';
+    const data = NS.CURRENT_LOCATORS || [];
+    if(!data.length){ container.innerHTML = '<div class="small">No locators. Paste/Render to populate.</div>'; return; }
+    data.forEach((it, idx)=>{
+      const val = (it.xpaths && it.xpaths[panel]) || it.css || '';
+      const row = document.createElement('div'); row.className = 'loc-row';
+      row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.justifyContent = 'space-between';
+      row.style.gap = '8px';
+      const left = document.createElement('div'); left.style.display='flex'; left.style.alignItems='center'; left.style.gap='8px';
+      const badge = document.createElement('span'); badge.className='badge'; badge.textContent = it.tag || 'elem';
+      const label = document.createElement('div'); label.innerHTML = `<div style="font-weight:700">${NS.escapeHtml(it.text||'(no text)')}</div><div class="small">${NS.escapeHtml(it.css||'')}</div>`;
+      left.appendChild(badge); left.appendChild(label);
+      const mid = document.createElement('div'); mid.className='mono'; mid.style.flex='1'; mid.style.whiteSpace='nowrap'; mid.style.overflow='hidden'; mid.style.textOverflow='ellipsis'; mid.textContent = val;
+      const act = document.createElement('div'); act.style.display='flex'; act.style.gap='6px';
+      const btnCopy = document.createElement('button'); btnCopy.className='btn'; btnCopy.textContent='Copy';
+      const btnHi = document.createElement('button'); btnHi.className='btn'; btnHi.textContent='Highlight';
+      act.appendChild(btnCopy); act.appendChild(btnHi);
+      row.appendChild(left); row.appendChild(mid); row.appendChild(act);
+      row.addEventListener('click', async (e)=>{ if(e.target && e.target.tagName === 'BUTTON') return; if(!mid.textContent) return; await NS.copyToClipboard(mid.textContent); NS.tryHighlightByXPath && NS.tryHighlightByXPath(mid.textContent); });
+      btnCopy.addEventListener('click', async (ev)=>{ ev.stopPropagation(); await NS.copyToClipboard(mid.textContent || ''); });
+      btnHi.addEventListener('click', (ev)=>{ ev.stopPropagation(); NS.tryHighlightByXPath && NS.tryHighlightByXPath(mid.textContent || ''); });
+      container.appendChild(row);
+    });
+  };
+})();
+
+// -------------------- Render / Clear wiring (preserve preview-only behavior) --------------------
+(function(){
+  async function renderPreviewFromPaste(){
+    try {
+      const paste = NS.$('#pasteBox');
+      const html = paste && paste.value ? paste.value : '<!doctype html><meta charset="utf-8"><body><h3>No content</h3></body>';
+      NS.CURRENT_HTML = html;
+      const preview = NS.getPreviewElement();
+      if(preview && preview.tagName && preview.tagName.toLowerCase()==='iframe'){
+        // strip scripts (minimal sanitization)
+        const srcdoc = String(html).replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '');
+        try { preview.srcdoc = srcdoc; } catch(e){ NS.showToast('Unable to set iframe srcdoc', 'error'); }
+      } else {
+        try { const container = NS.$('#preview'); if(container) container.innerHTML = html; } catch(e){}
+      }
+      // create parsed doc fallback
+      try { window._PARSER_DOC = (new DOMParser()).parseFromString(html,'text/html'); } catch(e){}
+      setTimeout(()=>{ NS.attachHandlersToPreview(); NS.extractAllLocators(); }, 350);
+      NS.showToast('Preview rendered', 'success');
+    } catch(e){ console.error(e); NS.showToast('Render failed', 'error'); }
+  }
+
+  function clearAll(){
+    try {
+      const paste = NS.$('#pasteBox'); if(paste) paste.value = '';
+      const preview = NS.getPreviewElement();
+      if(preview && preview.tagName && preview.tagName.toLowerCase()==='iframe'){
+        try { preview.srcdoc = '<body style="font-family:sans-serif"><h3>Preview cleared</h3></body>'; } catch(e){}
+      } else { const container = NS.$('#preview'); if(container) container.innerHTML = ''; }
+      NS.CURRENT_HTML = ''; NS.CURRENT_LOCATORS = []; NS.CUSTOM_LIST = [];
+      const loc = NS.$('#locList'); if(loc) loc.innerHTML = '';
+      const out = NS.$('#output'); if(out) out.value = '';
+      NS.showToast('Cleared', 'info');
+    } catch(e){ console.warn(e); }
+  }
+
+  // wire UI buttons if present
+  NS.$('#btnRender')?.addEventListener('click', renderPreviewFromPaste);
+  NS.$('#btnClear')?.addEventListener('click', clearAll);
+  // attach on startup
+  setTimeout(()=>{ NS.attachHandlersToPreview(); }, 600);
+})();
+
+console.info('AdhyPatch custom-ready. Version:', NS.version);
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<script>
 /* =========================
    Adhyan Offline — full merged script with Custom tab (complete)
    ========================= */
