@@ -1,0 +1,180 @@
+<script>
+/* =========================
+   Adhyan Offline — full merged script with Custom tab
+   ========================= */
+window.AdhyPatch = window.AdhyPatch || {};
+const NS = window.AdhyPatch;
+
+// -------------------- Phase 1: Global state --------------------
+NS.version = 'adhy-merged-3.0';
+NS.CURRENT_DOC = null;
+NS.CURRENT_HTML = '';
+NS.CURRENT_LOCATORS = [];
+NS.CURRENT_CUSTOM = null;
+NS.POM_CACHE = { pom:'', steps:'' };
+
+// -------------------- Phase 2: Utilities --------------------
+(function(){
+  NS.$ = (s, root=document) => { try { return (root||document).querySelector(s); } catch(e){ return null; } };
+  NS.$$ = (s, root=document) => { try { return Array.from((root||document).querySelectorAll(s)); } catch(e){ return []; } };
+
+  NS.showToast = function(msg, type='info'){
+    let t = document.getElementById('__adhy_toast');
+    if(!t){
+      t = document.createElement('div');
+      t.id = '__adhy_toast';
+      t.style.cssText = 'position:fixed;right:16px;bottom:16px;padding:8px 12px;border-radius:8px;background:#111;color:#fff;z-index:2147483647;font-family:sans-serif;opacity:1;transition:.2s';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.background = (type==='error')? '#b91c1c' : (type==='success')? '#047857' : '#111';
+    t.style.opacity = '1';
+    clearTimeout(t._t);
+    t._t = setTimeout(()=>t.style.opacity='0',1600);
+  };
+
+  NS.copyToClipboard = async function(txt){
+    try { await navigator.clipboard.writeText(txt); NS.showToast('Copied','success'); return true; }
+    catch(e){ console.warn(e); return false; }
+  };
+
+  NS.escapeHtml = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  NS.xpathLiteral = s => `"${String(s||'').replace(/"/g,'\\"')}"`;
+  NS.cssSelectorFor = el => {
+    if(!el||!el.tagName) return '';
+    if(el.id) return '#'+el.id;
+    let sel = el.tagName.toLowerCase();
+    if(el.classList && el.classList.length) sel += '.'+Array.from(el.classList).slice(0,2).join('.');
+    return sel;
+  };
+})();
+
+// -------------------- Phase 3: Preview helpers --------------------
+(function(){
+  function getPreview(){ return document.getElementById('preview'); }
+  function getDoc(){
+    const f = getPreview();
+    if(f && f.contentDocument) return f.contentDocument;
+    return window._PARSER_DOC || document;
+  }
+  NS.getPreviewDocument = getDoc;
+})();
+
+// -------------------- Phase 4: Highlight --------------------
+(function(){
+  function evalXPath(doc, xp){ try { return doc.evaluate(xp, doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE,null).singleNodeValue; }catch(e){return null;} }
+  NS.tryHighlightByXPath = function(xp){
+    const doc = NS.getPreviewDocument();
+    const el = evalXPath(doc, xp);
+    if(!el) return false;
+    const old = el.style.outline;
+    el.style.outline='3px solid #7c5cff'; el.scrollIntoView({behavior:'smooth',block:'center'});
+    setTimeout(()=>el.style.outline=old,1500);
+    return true;
+  };
+})();
+
+// -------------------- Phase 5: Locator generators --------------------
+(function(){
+  function safeAttr(el,n){ try{return el.getAttribute(n);}catch(e){return null;} }
+  function getLabel(el){ return (el.innerText||el.textContent||'').trim().slice(0,80); }
+
+  NS.genBasicXPath = el=>{
+    if(!el) return '';
+    if(el.id) return `//*[@id=${NS.xpathLiteral(el.id)}]`;
+    const tag = el.tagName.toLowerCase();
+    return `//${tag}[contains(normalize-space(.),${NS.xpathLiteral(getLabel(el))})]`;
+  };
+  NS.genWildcardXPath = el=>`//*[contains(normalize-space(.),${NS.xpathLiteral(getLabel(el))})]`;
+  NS.genAxesXPath = el=>`//label[contains(.,${NS.xpathLiteral(getLabel(el))})]/following::${el.tagName.toLowerCase()}[1]`;
+  NS.genFunctionXPath = el=>`//${el.tagName.toLowerCase()}[starts-with(@placeholder,'${(safeAttr(el,'placeholder')||'').split(' ')[0]}')]`;
+  NS.genSalesforceXPath = el=>safeAttr(el,'data-id')?`//${el.tagName.toLowerCase()}[@data-id=${NS.xpathLiteral(safeAttr(el,'data-id'))}]`:'';
+  NS.genPegaXPath = el=>safeAttr(el,'data-ctl')?`//${el.tagName.toLowerCase()}[@data-ctl=${NS.xpathLiteral(safeAttr(el,'data-ctl'))}]`:'';
+
+  NS.generateLocatorsForElement = el=>{
+    return {
+      tag: el.tagName.toLowerCase(),
+      text: getLabel(el),
+      xpaths:{
+        basic:NS.genBasicXPath(el),
+        wildcards:NS.genWildcardXPath(el),
+        axes:NS.genAxesXPath(el),
+        functions:NS.genFunctionXPath(el),
+        salesforce:NS.genSalesforceXPath(el),
+        pega:NS.genPegaXPath(el)
+      },
+      css:NS.cssSelectorFor(el)
+    };
+  };
+})();
+
+// -------------------- Phase 6: Extract all locators --------------------
+(function(){
+  function collect(doc){
+    return Array.from(doc.querySelectorAll('input,button,select,textarea,a,[role=button]'));
+  }
+  NS.extractAllLocators = function(){
+    const doc = NS.getPreviewDocument();
+    NS.CURRENT_LOCATORS = collect(doc).map(NS.generateLocatorsForElement);
+    NS.fillLocatorList('basic');
+    NS.showToast(`Extracted ${NS.CURRENT_LOCATORS.length}`);
+  };
+})();
+
+// -------------------- Phase 7: Locator List UI --------------------
+(function(){
+  function pickVal(loc,p){ return loc.xpaths[p]||loc.css||''; }
+  NS.fillLocatorList = function(panel='basic'){
+    const box=NS.$('#locList'); box.innerHTML='';
+    (NS.CURRENT_LOCATORS||[]).forEach(loc=>{
+      const val=pickVal(loc,panel);
+      const row=document.createElement('div'); row.className='loc-row';
+      row.innerHTML=`<div class="mono">${NS.escapeHtml(val)}</div>`;
+      row.addEventListener('click',()=>{NS.copyToClipboard(val);NS.tryHighlightByXPath(val);});
+      box.appendChild(row);
+    });
+  };
+})();
+
+// -------------------- Phase 8: Interactive click → Custom --------------------
+(function(){
+  function onClick(e){
+    e.preventDefault(); e.stopPropagation();
+    const el=e.target; if(!el) return;
+    NS.CURRENT_CUSTOM=NS.generateLocatorsForElement(el);
+    NS.showCustomLocators(NS.CURRENT_CUSTOM);
+  }
+  NS.attachHandlersToPreview=function(){
+    const doc=NS.getPreviewDocument();
+    doc.addEventListener('click',onClick,true);
+  };
+
+  NS.showCustomLocators=function(loc){
+    const box=NS.$('#locList'); box.innerHTML='';
+    const strategies=['basic','wildcards','axes','functions','salesforce','pega'];
+    strategies.forEach(k=>{
+      const v=loc.xpaths[k];
+      const row=document.createElement('div'); row.className='loc-row';
+      row.innerHTML=`<b>${k}</b> <span class="mono">${NS.escapeHtml(v)}</span>`;
+      row.addEventListener('click',()=>{NS.copyToClipboard(v);NS.tryHighlightByXPath(v);});
+      box.appendChild(row);
+    });
+    const cssRow=document.createElement('div'); cssRow.className='loc-row';
+    cssRow.innerHTML=`<b>CSS</b> <span class="mono">${loc.css}</span>`;
+    box.appendChild(cssRow);
+  };
+})();
+
+// -------------------- Phase 9: Render & Clear --------------------
+(function(){
+  NS.renderPreview=function(){
+    const txt=NS.$('#pasteBox').value||'<body><h3>No input</h3>';
+    NS.CURRENT_HTML=txt;
+    const f=NS.$('#preview'); f.srcdoc=txt.replace(/<script[\s\S]*?<\/script>/gi,'');
+    setTimeout(()=>{NS.attachHandlersToPreview();NS.extractAllLocators();},300);
+  };
+  NS.clearAll=function(){
+    NS.$('#pasteBox').value=''; NS.$('#preview').srcdoc='<body><h3>Cleared</h3>';
+    NS.CURRENT_LOCATORS=[]; NS.$('#locList').innerHTML=''; NS.$('#output').value='';
+  };
+  NS.$('#btnRender')?.addEventListener('click',NS
