@@ -1,0 +1,920 @@
+/* offlineXpath.js
+   Adhyan Offline — ABC build
+   - A: ranking + auto-select best candidate (⭐)
+   - B: POM + step-def generation (preview-only, ZIP on demand)
+   - C: Expandable element rows -> strategy candidates
+   Replace previous offlineXpath.js with this file.
+*/
+(function(global){
+  const NS = (global.AdhyPatch = global.AdhyPatch || {});
+  NS.version = 'adhy-offline-abc-2025.10';
+
+  // ---- State ----
+  NS.CURRENT_LOCATORS = [];       // array of { tag, text, elRef?, candidates: {basic:[], ...}, chosen: {strategy: xpath}, score: bestScore, best: xpath }
+  NS.CURRENT_CUSTOM = null;       // single captured element object
+  NS.UI = {};                     // cached UI nodes
+
+  // ---- Utilities ----
+  NS.$ = (sel, root=document) => { try { return (root||document).querySelector(sel); } catch(e) { return null; } };
+  NS.$$ = (sel, root=document) => { try { return Array.from((root||document).querySelectorAll(sel)); } catch(e){ return []; } };
+
+  function toast(msg, type='info'){
+    if(!document) return;
+    let t = document.getElementById('__adhy_toast');
+    if(!t){
+      t = document.createElement('div');
+      t.id = '__adhy_toast';
+      t.style.cssText = 'position:fixed;right:16px;bottom:16px;padding:8px 12px;border-radius:8px;background:#111;color:#fff;z-index:2147483647;font-family:system-ui;opacity:0;transition:opacity .18s, transform .18s;';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.background = type==='error' ? '#b91c1c' : type==='success' ? '#047857' : '#111';
+    t.style.opacity = '1';
+    t.style.transform = 'translateY(0)';
+    clearTimeout(t._t);
+    t._t = setTimeout(()=>{ t.style.opacity='0'; t.style.transform='translateY(6px)'; }, 1600);
+  }
+
+  async function copyText(txt){
+    try { await navigator.clipboard.writeText(txt); toast('Copied', 'success'); return true; }
+    catch(e){ toast('Copy failed', 'error'); return false; }
+  }
+
+  function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function xpathLiteral(s){
+    s = String(s||'');
+    if (s.indexOf('"') === -1) return `"${s}"`;
+    if (s.indexOf("'") === -1) return `'${s}'`;
+    // mixed quotes -> use concat
+    const parts = s.split('"'), out = [];
+    for (let i=0;i<parts.length;i++){
+      if (parts[i] !== '') out.push(`"${parts[i].replace(/\\/g,'\\\\')}"`);
+      if (i < parts.length - 1) out.push(`'"'`);
+    }
+    return `concat(${out.join(',')})`;
+  }
+
+  function clamp(n,min,max){ return Math.max(min, Math.min(max, n)); }
+
+  // ---- Preview helpers ----
+  function getPreviewEl(){ return NS.$('#preview'); }
+  function getPreviewDoc(){
+    const f = getPreviewEl();
+    if(f && f.tagName && f.tagName.toLowerCase() === 'iframe'){
+      try { if(f.contentDocument) return f.contentDocument; } catch(e){}
+      // fallback to parsed doc if present
+      return window._PARSER_DOC || document;
+    }
+    return window._PARSER_DOC || document;
+  }
+
+  // ---- Candidate extraction strategies ----
+  const TOP_ATTRS = ['id','data-test-id','data-testid','data-qa','data-qa-locator','data-id','name','aria-label','title','placeholder','value','role','type'];
+  function getAttr(el,k){ try{ return el.getAttribute && el.getAttribute(k); }catch(e){ return null; } }
+  function firstText(el){ try{ const t = (el.innerText||el.textContent||'').trim(); return t; }catch(e){ return ''; } }
+  function firstClassToken(el){ try{ const c = getAttr(el,'class'); if(!c) return ''; const tok = c.split(/\s+/).filter(Boolean)[0] || ''; return tok; }catch(e){ return ''; } }
+
+  // Basic XPath candidates: exact attribute matches, by name, by text, fallback tag
+  function genBasicList(el){
+    const tag = el.tagName.toLowerCase();
+    const out = [];
+    // exact attribute match candidates (prioritize id & data-*)
+    for(const a of TOP_ATTRS){
+      const v = getAttr(el, a);
+      if(v) out.push(`//${tag}[@${a}=${xpathLiteral(v)}]`);
+    }
+    // label->following
+    if(el.id){
+      out.push(`//label[@for=${xpathLiteral(el.id)}]/following::${tag}[1]`);
+    } else {
+      const lbl = el.closest && el.closest('label');
+      if(lbl){
+        const lt = (lbl.innerText||lbl.textContent||'').trim();
+        if(lt) out.push(`//label[normalize-space(.)=${xpathLiteral(lt)}]/following::${tag}[1]`);
+      }
+    }
+    // text exact
+    const txt = firstText(el);
+    if(txt) out.push(`//${tag}[normalize-space(.)=${xpathLiteral(txt)}]`);
+    out.push(`//${tag}`); // fallback
+    return dedupe(out);
+  }
+
+  // Wildcards: contains on attributes/class/text
+  function genWildList(el){
+    const tag = el.tagName.toLowerCase();
+    const out = [];
+    for(const a of TOP_ATTRS){
+      const v = getAttr(el, a);
+      if(v) out.push(`//${tag}[contains(@${a}, ${xpathLiteral(String(v))})]`);
+    }
+    const clsTok = firstClassToken(el);
+    if(clsTok) out.push(`//${tag}[contains(concat(' ', normalize-space(@class), ' '), ${xpathLiteral(' '+clsTok+' ')})]`);
+    const txt = firstText(el);
+    if(txt) out.push(`//${tag}[contains(normalize-space(.), ${xpathLiteral(txt)})]`);
+    return dedupe(out);
+  }
+
+  // Axes strategies: label, ancestor, following/preceding
+  function genAxesList(el){
+    const tag = el.tagName.toLowerCase();
+    const out = [];
+    if(el.id) out.push(`//label[@for=${xpathLiteral(el.id)}]/following::${tag}[1]`);
+    const lbl = el.closest && el.closest('label');
+    if(lbl){
+      const lt = (lbl.innerText||lbl.textContent||'').trim();
+      if(lt) out.push(`//label[contains(normalize-space(.), ${xpathLiteral(lt)})]/following::${tag}[1]`);
+    }
+    // try nearest container text
+    let a = el.parentElement, hops=0;
+    while(a && hops<4){
+      const t = (a.innerText||'').trim();
+      if(t && t.length < 120){
+        out.push(`//*[contains(normalize-space(.), ${xpathLiteral(t.slice(0,60))})]//${tag}`);
+        break;
+      }
+      a = a.parentElement; hops++;
+    }
+    return dedupe(out);
+  }
+
+  // Functions & attribute-based
+  function genFuncList(el){
+    const tag = el.tagName.toLowerCase();
+    const out = [];
+    ['placeholder','title','aria-label','name','value'].forEach(k=>{
+      const v = getAttr(el,k);
+      if(v) out.push(`//${tag}[contains(@${k}, ${xpathLiteral(v)})]`);
+    });
+    const txt = firstText(el);
+    if(txt) out.push(`//${tag}[contains(normalize-space(.), ${xpathLiteral(txt)})]`);
+    return dedupe(out);
+  }
+
+  // Salesforce-specific
+  function genSfList(el){
+    const tag = el.tagName.toLowerCase();
+    const out = [];
+    ['data-aura-rendered-by','data-qa-locator','data-id'].forEach(k=>{
+      const v = getAttr(el,k);
+      if(v) out.push(`//${tag}[@${k}=${xpathLiteral(v)}]`);
+    });
+    const aria = getAttr(el,'aria-label');
+    if(aria) out.push(`//${tag}[@aria-label=${xpathLiteral(aria)}]`);
+    return dedupe(out);
+  }
+
+  // Pega-specific
+  function genPegaList(el){
+    const tag = el.tagName.toLowerCase();
+    const out = [];
+    ['data-test-id','data-ctl'].forEach(k=>{
+      const v = getAttr(el,k);
+      if(v) out.push(`//${tag}[@${k}=${xpathLiteral(v)}]`);
+    });
+    const lbl = el.closest && el.closest('label');
+    if(lbl){
+      const lt = (lbl.innerText||lbl.textContent||'').trim();
+      if(lt) out.push(`//label[contains(normalize-space(.), ${xpathLiteral(lt)})]/following::${tag}[1]`);
+    }
+    return dedupe(out);
+  }
+
+  // dedupe simple
+  function dedupe(arr){
+    const out=[], s=new Set();
+    for(const i of arr){ const k=String(i||'').trim(); if(!k || s.has(k)) continue; s.add(k); out.push(k); }
+    return out;
+  }
+
+  // ---- scoring (best candidate auto-select) ----
+  // Score by presence of id or data-*, then name/aria/placeholder, then text, then class, then fallback
+  function scoreCandidate(xpathStr, el){
+    // heuristics: higher score when matches id/data-*, contains exact equals (not contains)
+    if(!xpathStr) return 0;
+    const lower = xpathStr.toLowerCase();
+    let score = 1;
+    if(/@id=/.test(lower)) score += 120;
+    if(/@data-/.test(lower)) score += 80;
+    if(/@name=/.test(lower)) score += 50;
+    if(/@aria-label=/.test(lower) || /@title=/.test(lower)) score += 40;
+    if(/normalize-space\(\.\)=/.test(lower) || /text\(\)/.test(lower)) score += 35;
+    if(/contains\(.+@class/.test(lower) || /contains\(concat\(/.test(lower)) score += 18;
+    if(/following::/.test(lower) || /ancestor::|preceding::/.test(lower)) score += 10;
+    // penalize overly generic
+    if(/^\/\/[a-z0-9]+$/.test(lower)) score -= 40;
+    return score;
+  }
+
+  function pickBestForElement(elObj){
+    // elObj.candidates: object keyed strategies -> arrays
+    const strategies = Object.keys(elObj.candidates || {});
+    let best = '', bestScore = -9999, bestStrat = '', bestIdx = 0;
+    strategies.forEach(strat=>{
+      const arr = elObj.candidates[strat]||[];
+      arr.forEach((xp, idx)=>{
+        const sc = scoreCandidate(xp, elObj.elRef);
+        if(sc > bestScore){ bestScore = sc; best = xp; bestStrat = strat; bestIdx = idx; }
+      });
+    });
+    elObj.best = best || '';
+    elObj.bestScore = bestScore;
+    elObj.chosen = elObj.chosen || {}; // map strategy -> chosen xp (default first)
+    // set default chosen for each strategy (if not set)
+    strategies.forEach(strat=>{
+      const arr = elObj.candidates[strat]||[];
+      if(arr.length){
+        if(!elObj.chosen[strat]) elObj.chosen[strat] = arr[0];
+      } else {
+        elObj.chosen[strat] = '';
+      }
+    });
+    // ensure chosen 'active' strategy equals the best for UI main row
+    elObj.autoSelected = { xpath: best, strategy: bestStrat, idx: bestIdx, score: bestScore };
+    return elObj;
+  }
+
+  // ---- collect candidates from preview doc ----
+  function shouldSkip(el){
+    try{
+      if(!el || el.nodeType !== 1) return true;
+      if(el.hasAttribute && el.hasAttribute('hidden')) return true;
+      const s = (el.getAttribute && el.getAttribute('style')||'').toLowerCase();
+      if(s && (/display\s*:\s*none|visibility\s*:\s*hidden/).test(s)) return true;
+      if(el.tagName && el.tagName.toLowerCase()==='script') return true;
+      // skip anchors without href
+      if(el.tagName && el.tagName.toLowerCase()==='a' && (!el.hasAttribute('href') || el.getAttribute('href') === '#')) return true;
+    }catch(e){}
+    return false;
+  }
+
+  function collectCandidateElements(doc){
+    const sel = ['input:not([type="hidden"])','button','a','select','textarea','[role="button"]','[data-qa-locator]','[data-test-id]','[data-ctl]','lightning-input','lightning-button'].join(',');
+    let list = [];
+    try { list = Array.from(doc.querySelectorAll(sel)); } catch(e){ list = []; }
+    list = list.filter(el => !shouldSkip(el));
+    // dedupe by quick signature
+    const seen = new Set(), out = [];
+    list.forEach(el=>{
+      try {
+        const sig = [el.tagName.toLowerCase(), el.id||'', el.getAttribute && el.getAttribute('name')||'', (el.textContent||'').trim().slice(0,60)].join('|');
+        if(seen.has(sig)) return;
+        seen.add(sig);
+        out.push(el);
+      } catch(e){}
+    });
+    return out;
+  }
+
+  // ---- build locator object for single element (candidates) ----
+  function buildLocatorObjectFromElement(el){
+    const o = {
+      tag: el.tagName.toLowerCase(),
+      text: firstText(el),
+      elRef: el,
+      candidates: {
+        basic: genBasicList(el),
+        wildcards: genWildList(el),
+        axes: genAxesList(el),
+        functions: genFuncList(el),
+        salesforce: genSfList(el),
+        pega: genPegaList(el)
+      },
+      chosen: {}, // will initialize
+    };
+    pickBestForElement(o);
+    return o;
+  }
+
+  // ---- UI building ----
+  function makeElementRow(elObj, idx){
+    // wrapper
+    const row = document.createElement('div');
+    row.className = 'element-row';
+    row.style.cssText = 'border-radius:8px;padding:8px;margin:8px 0;background:#fff;color:#0f172a;border:1px solid #e6ecf5;';
+
+    // header line: checkbox, expand toggle, title, best xpath preview, actions
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:8px';
+
+    // checkbox
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'elem-check';
+    cb.dataset.idx = idx;
+    // auto-check elements with a best candidate
+    cb.checked = !!elObj.best;
+
+    // expand toggle
+    const toggle = document.createElement('button');
+    toggle.textContent = '▶';
+    toggle.title = 'Expand strategies';
+    toggle.style.cssText = 'width:30px;height:30px;border-radius:6px;border:1px solid #e6ecf5;background:#f8fafc;cursor:pointer';
+
+    // title
+    const title = document.createElement('div');
+    title.style.cssText = 'flex:0 0 200px;min-width:120px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    const labelText = elObj.text || (elObj.tag || 'element');
+    title.textContent = labelText.length>40 ? labelText.slice(0,40)+'…' : labelText;
+
+    // best indicator and preview
+    const bestWrap = document.createElement('div');
+    bestWrap.style.cssText = 'flex:1;display:flex;gap:8px;align-items:center';
+    if(elObj.autoSelected && elObj.autoSelected.xpath){
+      const star = document.createElement('span'); star.textContent='⭐'; star.title = `Auto-selected: ${elObj.autoSelected.strategy}`; star.style.cssText='font-size:14px';
+      bestWrap.appendChild(star);
+    }
+    const xpPreview = document.createElement('div');
+    xpPreview.className = 'mono';
+    xpPreview.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    xpPreview.title = elObj.autoSelected && elObj.autoSelected.xpath ? elObj.autoSelected.xpath : '';
+    xpPreview.textContent = elObj.autoSelected && elObj.autoSelected.xpath ? elObj.autoSelected.xpath : '(no xpath)';
+    bestWrap.appendChild(xpPreview);
+
+    // actions: copy best, highlight in preview, remove
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:6px';
+    const btnCopyBest = document.createElement('button'); btnCopyBest.className='btn'; btnCopyBest.textContent='Copy';
+    const btnHiBest = document.createElement('button'); btnHiBest.className='btn'; btnHiBest.textContent='Highlight';
+    const btnRemove = document.createElement('button'); btnRemove.className='btn'; btnRemove.textContent='Remove';
+    actions.appendChild(btnCopyBest); actions.appendChild(btnHiBest); actions.appendChild(btnRemove);
+
+    header.appendChild(cb); header.appendChild(toggle); header.appendChild(title); header.appendChild(bestWrap); header.appendChild(actions);
+
+    // body (collapsed by default) -> list of strategies
+    const body = document.createElement('div');
+    body.style.cssText = 'margin-top:8px;display:none;flex-direction:column;gap:6px';
+
+    // For each strategy show candidate list (first visible) with quick click/select
+    const strategies = ['basic','wildcards','axes','functions','salesforce','pega'];
+    strategies.forEach(strategy=>{
+      const candidates = elObj.candidates[strategy] || [];
+      const stratRow = document.createElement('div');
+      stratRow.style.cssText = 'display:flex;gap:8px;align-items:flex-start;padding:6px;border-radius:6px;background:#fbfcfe;border:1px solid #e6ecf5';
+      const stratLabel = document.createElement('div');
+      stratLabel.style.cssText = 'width:120px;font-weight:800;color:#0f172a';
+      stratLabel.textContent = strategy.toUpperCase();
+      const candidateWrap = document.createElement('div');
+      candidateWrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;flex:1';
+      if(candidates.length===0){
+        const none = document.createElement('div'); none.className='small mono'; none.textContent = '(none)';
+        candidateWrap.appendChild(none);
+      } else {
+        candidates.forEach((c, candIdx) => {
+          const candLine = document.createElement('div');
+          candLine.style.cssText = 'display:flex;gap:8px;align-items:center';
+          const radio = document.createElement('input');
+          radio.type = 'radio';
+          radio.name = `rad_${idx}_${strategy}`;
+          radio.value = c;
+          // default selection: elObj.chosen[strategy] or first candidate
+          if(elObj.chosen && elObj.chosen[strategy]){
+            radio.checked = (elObj.chosen[strategy] === c);
+          } else {
+            radio.checked = (candIdx===0);
+            elObj.chosen = elObj.chosen || {};
+            elObj.chosen[strategy] = elObj.chosen[strategy] || c;
+          }
+
+          const candText = document.createElement('div');
+          candText.className='mono';
+          candText.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer';
+          candText.title = c;
+          candText.textContent = c;
+
+          // actions for candidate: click to copy, click radio to choose
+          radio.addEventListener('change', ()=>{
+            elObj.chosen = elObj.chosen || {};
+            elObj.chosen[strategy] = c;
+            // update header preview if this strategy is selected as the representative
+            // We will not change the 'best' automatically — main row shows autoSelected, but chosen strategy value is used for generation.
+          });
+          candText.addEventListener('click', async ()=>{
+            await copyText(c);
+            // attempt highlight in preview
+            tryHighlightXPathInPreview(c);
+          });
+
+          // small copy button
+          const candCopy = document.createElement('button'); candCopy.className='btn'; candCopy.textContent='Copy';
+          candCopy.onclick = (ev) => { ev.stopPropagation(); copyText(c); };
+
+          const candHi = document.createElement('button'); candHi.className='btn'; candHi.textContent='Hi';
+          candHi.onclick = (ev) => { ev.stopPropagation(); tryHighlightXPathInPreview(c); };
+
+          candLine.appendChild(radio); candLine.appendChild(candText); candLine.appendChild(candCopy); candLine.appendChild(candHi);
+          candidateWrap.appendChild(candLine);
+        });
+      }
+
+      stratRow.appendChild(stratLabel);
+      stratRow.appendChild(candidateWrap);
+      body.appendChild(stratRow);
+    });
+
+    // CSS candidate display
+    const cssRow = document.createElement('div');
+    cssRow.style.cssText = 'display:flex;gap:8px;align-items:center;padding:6px;border-radius:6px;background:#fbfcfe;border:1px solid #e6ecf5';
+    const cssLabel = document.createElement('div'); cssLabel.style.cssText='width:120px;font-weight:800'; cssLabel.textContent='CSS';
+    const cssVal = document.createElement('div'); cssVal.className='mono'; cssVal.style.cssText='flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    const cssSel = cssSelectorFor(elObj.elRef || {});
+    cssVal.textContent = cssSel || '(none)';
+    const cssCopy = document.createElement('button'); cssCopy.className='btn'; cssCopy.textContent='Copy'; cssCopy.onclick = (ev)=>{ ev.stopPropagation(); copyText(cssSel); };
+    cssRow.appendChild(cssLabel); cssRow.appendChild(cssVal); cssRow.appendChild(cssCopy);
+    body.appendChild(cssRow);
+
+    // append header & body
+    row.appendChild(header);
+    row.appendChild(body);
+
+    // wire interactions
+    toggle.addEventListener('click', ()=>{
+      if(body.style.display === 'none' || !body.style.display) {
+        body.style.display = 'flex';
+        toggle.textContent = '▼';
+      } else {
+        body.style.display = 'none';
+        toggle.textContent = '▶';
+      }
+    });
+
+    btnCopyBest.addEventListener('click', (ev)=>{ ev.stopPropagation(); copyText(elObj.autoSelected && elObj.autoSelected.xpath || elObj.best || ''); });
+    btnHiBest.addEventListener('click', (ev)=>{ ev.stopPropagation(); tryHighlightXPathInPreview(elObj.autoSelected && elObj.autoSelected.xpath || elObj.best || ''); });
+    btnRemove.addEventListener('click', (ev)=>{ ev.stopPropagation(); NS.CURRENT_LOCATORS.splice(idx,1); renderLocatorList(getActivePanel()); });
+    // clicking the header copies the representative xpath
+    xpPreview.addEventListener('click', async (ev)=>{ ev.stopPropagation(); const xp = xpPreview.textContent||''; if(!xp) return; await copyText(xp); tryHighlightXPathInPreview(xp); });
+
+    return row;
+  }
+
+  // very simple CSS generator fallback
+  function cssSelectorFor(el){
+    try{
+      if(!el || !el.tagName) return '';
+      if(el.id) return '#'+CSS.escape ? CSS.escape(el.id) : '#'+el.id;
+      let sel = el.tagName.toLowerCase();
+      const cls = el.className || '';
+      if(cls){
+        const tok = String(cls).split(/\s+/).filter(Boolean)[0];
+        if(tok) sel += '.'+tok;
+      }
+      if(el.getAttribute && el.getAttribute('name')) sel += `[name="${el.getAttribute('name')}"]`;
+      return sel;
+    }catch(e){ return ''; }
+  }
+
+  // ---- show locator list (one row per element) ----
+  function getActivePanel(){
+    const act = document.querySelector('#locatorTabs .chip.active');
+    return act ? (act.dataset.paneltab||'basic') : 'basic';
+  }
+
+  function renderLocatorList(panel){
+    const cont = NS.$('#locator-list') || NS.$('#locList');
+    if(!cont) return;
+    cont.innerHTML = '';
+
+    // top controls
+    const top = document.createElement('div');
+    top.style.cssText = 'display:flex;gap:10px;align-items:center;margin-bottom:6px';
+    const selAllLabel = document.createElement('label');
+    selAllLabel.style.cssText = 'display:flex;gap:8px;align-items:center';
+    selAllLabel.innerHTML = `<input type="checkbox" id="__sel_all"> Select all`;
+    top.appendChild(selAllLabel);
+    cont.appendChild(top);
+    const selAllCb = top.querySelector('#__sel_all');
+    selAllCb.addEventListener('change', (e)=> {
+      const checked = !!e.target.checked;
+      cont.querySelectorAll('.elem-check').forEach(cb => cb.checked = checked);
+    });
+
+    // Build each element row
+    NS.CURRENT_LOCATORS.forEach((elObj, idx) => {
+      // ensure candidates object available and chosen set
+      renderIndexSafety(elObj);
+      const row = makeElementRow(elObj, idx);
+      cont.appendChild(row);
+    });
+
+    // footer count
+    const footer = document.createElement('div');
+    footer.style.cssText = 'margin-top:6px;color:#6b7280';
+    footer.textContent = `${NS.CURRENT_LOCATORS.length} elements`;
+    cont.appendChild(footer);
+
+    // update UI cache
+    NS.UI.locList = cont;
+  }
+
+  function renderIndexSafety(elObj){
+    elObj.candidates = elObj.candidates || { basic:[], wildcards:[], axes:[], functions:[], salesforce:[], pega:[] };
+    elObj.chosen = elObj.chosen || {};
+    Object.keys(elObj.candidates).forEach(k=> {
+      if(!elObj.chosen[k]) elObj.chosen[k] = elObj.candidates[k] && elObj.candidates[k][0] || '';
+    });
+    if(!elObj.autoSelected) pickBestForElement(elObj);
+  }
+
+  // ---- highlight attempt (in iframe or parsed doc or main doc) ----
+  function tryHighlightXPathInPreview(xpath){
+    if(!xpath) return false;
+    // 1) try preview iframe doc
+    const prev = getPreviewEl();
+    if(prev && prev.tagName && prev.tagName.toLowerCase()==='iframe'){
+      try {
+        const pd = prev.contentDocument;
+        if(pd){
+          const node = pd.evaluate(xpath, pd, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+          if(node){
+            transientHighlight(node);
+            return true;
+          }
+        }
+      } catch(e){ /* ignore cross-origin */ }
+    }
+    // 2) try parsed doc in window._PARSER_DOC (used when iframe blocked)
+    try{
+      if(window._PARSER_DOC){
+        const pd = window._PARSER_DOC;
+        const node = pd.evaluate(xpath, pd, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+        if(node){ transientHighlight(node); return true; }
+      }
+    } catch(e){}
+    // 3) try main document
+    try{
+      const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+      if(node){ transientHighlight(node); return true; }
+    } catch(e){}
+    toast('Highlight not found (cross-origin?)', 'error');
+    return false;
+  }
+
+  function transientHighlight(el){
+    if(!el || !el.style) return;
+    const orig = { outline: el.style.outline || '', boxShadow: el.style.boxShadow || '' };
+    el.style.outline = '3px solid rgba(124,92,255,0.9)';
+    el.scrollIntoView({behavior:'smooth', block:'center'});
+    setTimeout(()=>{ try{ el.style.outline = orig.outline; el.style.boxShadow = orig.boxShadow; }catch(e){} }, 1500);
+  }
+
+  // ---- extraction entrypoint (reads preview and builds NS.CURRENT_LOCATORS) ----
+  NS.extractAllLocators = function(){
+    const prevDoc = getPreviewDoc();
+    const els = collectCandidateElements(prevDoc);
+    NS.CURRENT_LOCATORS = els.map(el => {
+      const o = buildLocatorObjectFromElement(el);
+      return o;
+    });
+    // pre-pick best and ensure chosen defaults
+    NS.CURRENT_LOCATORS.forEach(o => pickBestForElement(o));
+    renderLocatorList(getActivePanel());
+    toast(`Extracted ${NS.CURRENT_LOCATORS.length} elements`, 'success');
+  };
+
+  // ---- attach click capture inside preview (captures one element and adds to top, expands) ----
+  function interactiveClickHandler(e){
+    try {
+      e.preventDefault && e.preventDefault();
+      e.stopPropagation && e.stopPropagation();
+      const el = e.target;
+      if(!el) return;
+      const obj = buildLocatorObjectFromElement(el);
+      // insert at top of CURRENT_LOCATORS and auto-expand (we will re-render)
+      NS.CURRENT_LOCATORS.unshift(obj);
+      renderLocatorList(getActivePanel());
+      // auto-expand first row (toggle body)
+      const cont = NS.$('#locator-list') || NS.$('#locList');
+      if(cont){
+        const firstToggle = cont.querySelector('.element-row button');
+        if(firstToggle) firstToggle.click();
+      }
+      toast('Captured element — added to Custom (top)', 'success');
+    } catch(e){ console.error(e); toast('Capture failed', 'error'); }
+  }
+
+  NS.attachHandlersToPreview = function(){
+    // detach previous if any
+    try {
+      const prev = getPreviewEl();
+      // remove previous listeners recorded (simple approach: remove click on doc by cloning)
+      if(prev && prev.tagName && prev.tagName.toLowerCase()==='iframe'){
+        try {
+          const pd = prev.contentDocument;
+          if(pd){
+            // remove existing by attempting to remove reference (we don't keep reference list for cross-doc)
+            // best effort: add a listener once (use capture true) and set dataset flag to avoid duplicates
+            if(!pd._adhy_click_installed){
+              pd.addEventListener('click', interactiveClickHandler, true);
+              pd._adhy_click_installed = true;
+            }
+          }
+        } catch(e){ /* cross origin maybe */ }
+      } else {
+        // inline doc (unlikely) - attach to document
+        if(!document._adhy_click_installed){
+          document.addEventListener('click', interactiveClickHandler, true);
+          document._adhy_click_installed = true;
+        }
+      }
+    } catch(e){ console.warn('attachHandlersToPreview failed', e); }
+  };
+
+  // ---- Render from textarea -> iframe/srcdoc (strip scripts) ----
+  NS.renderPreviewFromPaste = function(){
+    const ta = NS.$('#pasteBox');
+    if(!ta){ toast('pasteBox not found', 'error'); return; }
+    const html = ta.value || '';
+    NS.CURRENT_HTML = html;
+    const prev = getPreviewEl();
+    if(prev && prev.tagName && prev.tagName.toLowerCase()==='iframe'){
+      let src = html || '<!doctype html><meta charset="utf-8"><body><h3>No content</h3></body>';
+      try{ src = src.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, ''); }catch(e){}
+      try { prev.srcdoc = src; } catch(e){ try { prev.removeAttribute('sandbox'); prev.srcdoc = src; } catch(e){} }
+      // parse into _PARSER_DOC as fallback if iframe inaccessible for future extraction
+      try { window._PARSER_DOC = (new DOMParser()).parseFromString(html,'text/html'); } catch(e){}
+      setTimeout(()=>{ NS.attachHandlersToPreview(); NS.extractAllLocators(); }, 350);
+      toast('Preview rendered', 'success');
+    } else {
+      // inline preview
+      try {
+        if(prev) prev.innerHTML = html;
+        window._PARSER_DOC = (new DOMParser()).parseFromString(html,'text/html');
+        setTimeout(()=>{ NS.attachHandlersToPreview(); NS.extractAllLocators(); }, 150);
+        toast('Preview rendered', 'success');
+      } catch(e){ toast('Render failed', 'error'); }
+    }
+  };
+
+  // ---- Clear functionality ----
+  NS.clearAll = function(){
+    try {
+      const ta = NS.$('#pasteBox'); if(ta) ta.value = '';
+      const out = NS.$('#output'); if(out) out.value = '';
+      const prev = getPreviewEl(); if(prev && prev.tagName && prev.tagName.toLowerCase()==='iframe') prev.srcdoc = '<body><h3>Preview cleared</h3></body>';
+      NS.CURRENT_LOCATORS = []; NS.CURRENT_CUSTOM = null;
+      renderLocatorList(getActivePanel());
+      toast('Cleared', 'info');
+    } catch(e){ console.warn(e); }
+  };
+
+  // ---- Selection helper to gather chosen locators for artifact generation ----
+  function getSelectedLocatorsForGeneration(){
+    const cont = NS.$('#locator-list') || NS.$('#locList');
+    if(!cont) return [];
+    // find checked element rows
+    const checks = Array.from(cont.querySelectorAll('.elem-check:checked'));
+    if(checks.length === 0){
+      toast('Select at least one element to generate', 'error');
+      return [];
+    }
+    const out = [];
+    checks.forEach(cb=>{
+      const idx = +cb.dataset.idx;
+      const elObj = NS.CURRENT_LOCATORS[idx];
+      if(!elObj) return;
+      // Choose the "representative" xpath: prefer best if exists else choose chosen.basic first else pick any chosen
+      let rep = elObj.autoSelected && elObj.autoSelected.xpath || '';
+      if(!rep){
+        // if user selected per-strategy radio, choose basic chosen or first non-empty
+        rep = elObj.chosen && (elObj.chosen.basic || Object.values(elObj.chosen).find(x=>x)) || '';
+      }
+      const nameRaw = elObj.text || elObj.tag || `elem${idx+1}`;
+      const name = nameRaw.replace(/\s+/g,'_').replace(/[^A-Za-z0-9_]/g,'').slice(0,40) || `elem${idx+1}`;
+      out.push({ name, xpath: rep, tag: elObj.tag });
+    });
+    return out;
+  }
+
+  // ---- Artifacts generation (POM + Steps) ----
+  function sanitizeClassName(s){
+    return (s||'SamplePage').replace(/[^A-Za-z0-9_]/g,'_').replace(/^\d+/,'A');
+  }
+
+  // Simple builders: only representative examples (expandable)
+  function buildArtifacts({ fw, lang, locs }){
+    fw = (fw||document.querySelector('.sw[data-fw].active')?.dataset?.fw||'selenium').toLowerCase();
+    lang = (lang||document.querySelector('.sw[data-lang].active')?.dataset?.lang||'java').toLowerCase();
+    locs = locs || [];
+    const className = sanitizeClassName(document.getElementById('pageClassName')?.value || 'SamplePage');
+
+    // helper for escaping quotes
+    const esc = s => String(s||'').replace(/"/g,'\\"');
+
+    const files = {};
+    // README
+    files['README.md'] = `# Generated by Adhyan Offline — preview-only\nFramework: ${fw}\nLanguage: ${lang}\nElements: ${locs.length}\n`;
+
+    // Build basic POM per fw/lang
+    // Java + Selenium
+    if(fw==='selenium' && lang==='java'){
+      const fields = locs.map(l=>`    @FindBy(xpath = "${esc(l.xpath)}")\n    private WebElement ${l.name};`).join('\n\n');
+      const methods = locs.map(l=>{
+        const C = (l.name.charAt(0).toUpperCase()+l.name.slice(1));
+        const t = (l.tag||'').toLowerCase();
+        if(t==='input') return `    public void type${C}(String v){ ${l.name}.clear(); ${l.name}.sendKeys(v); }`;
+        if(t==='button') return `    public void click${C}(){ ${l.name}.click(); }`;
+        return `    public boolean is${C}Visible(){ return ${l.name}.isDisplayed(); }`;
+      }).join('\n\n');
+      const content = `package com.pageobjects;\n\nimport org.openqa.selenium.WebDriver;\nimport org.openqa.selenium.WebElement;\nimport org.openqa.selenium.support.FindBy;\nimport org.openqa.selenium.support.PageFactory;\n\npublic class ${className} {\n    WebDriver driver;\n\n${fields}\n\n    public ${className}(WebDriver driver){\n        this.driver = driver;\n        PageFactory.initElements(driver, this);\n    }\n\n${methods}\n}\n`;
+      files[`${className}.java`] = content;
+      // StepDefs (Cucumber) simple stub
+      const steps = `import io.cucumber.java.en.When;\n\npublic class ${className}Steps {\n    private ${className} page;\n\n    @When("I click {string}")\n    public void i_click(String name){\n        // TODO map name to page methods\n    }\n}\n`;
+      files[`${className}Steps.java`] = steps;
+      return files;
+    }
+
+    // Playwright + JS (example)
+    if(fw==='playwright' && lang==='javascript'){
+      const cls = [`class ${className} {`, `  constructor(page){`, `    this.page = page;`];
+      locs.forEach(l=>{
+        cls.push(`    this.${l.name} = page.locator("xpath=${esc(l.xpath)}");`);
+      });
+      cls.push('  }');
+      locs.forEach(l=>{
+        const n = l.name;
+        cls.push(`  async click_${n}(){ await this.${n}.click(); }`);
+      });
+      cls.push('}');
+      cls.push(`module.exports = { ${className} };`);
+      files[`${className}.js`] = cls.join('\n');
+      // Steps (JS) simple
+      const steps = `const { When } = require('@cucumber/cucumber');\nWhen('I click {string}', async function(name){\n  // TODO map name to page actions\n});\n`;
+      files[`${className}.steps.js`] = steps;
+      return files;
+    }
+
+    // Fallback: simple locators list
+    files['locators.txt'] = locs.map(l=>`${l.name}: ${l.xpath}`).join('\n');
+    files['steps.txt'] = locs.map(l=>`When I click ${l.name}`).join('\n');
+    return files;
+  }
+
+  // ---- Buttons wiring & downloads ----
+  function wireUI(){
+    // Render
+    const btnRender = NS.$('#btnRender');
+    if(btnRender) btnRender.addEventListener('click', NS.renderPreviewFromPaste);
+
+    // Clear
+    const btnClear = NS.$('#btnClear');
+    if(btnClear) btnClear.addEventListener('click', NS.clearAll);
+
+    // File open
+    const btnOpen = NS.$('#btnOpenFile');
+    if(btnOpen) btnOpen.addEventListener('click', ()=> NS.$('#hiddenFile')?.click());
+    const hiddenFile = NS.$('#hiddenFile');
+    if(hiddenFile) hiddenFile.addEventListener('change', (e)=>{
+      const f = e.target.files && e.target.files[0];
+      if(!f) return;
+      const r = new FileReader();
+      r.onload = ev => { const ta = NS.$('#pasteBox'); if(ta) ta.value = ev.target.result; NS.renderPreviewFromPaste(); };
+      r.readAsText(f);
+    });
+
+    // Generate POM (preview into #output)
+    const btnGen = NS.$('#btnGenPOM');
+    if(btnGen) btnGen.addEventListener('click', ()=>{
+      const selected = getSelectedLocatorsForGeneration();
+      if(!selected.length) return;
+      const fw = document.querySelector('.sw[data-fw].active')?.dataset?.fw || 'selenium';
+      const lang = document.querySelector('.sw[data-lang].active')?.dataset?.lang || 'java';
+      const files = buildArtifacts({ fw, lang, locs: selected });
+      const out = NS.$('#output');
+      if(out) out.value = Object.keys(files).map(k=>`// ==== ${k} ====\n${files[k]}\n`).join('\n\n');
+      toast('Generated POM preview', 'success');
+    });
+
+    // Download POM -> uses buildArtifacts and downloads first primary file (if only one)
+    const btnDownloadPOM = NS.$('#btnDownloadPOM');
+    if(btnDownloadPOM) btnDownloadPOM.addEventListener('click', ()=>{
+      const selected = getSelectedLocatorsForGeneration();
+      if(!selected.length) return;
+      const fw = document.querySelector('.sw[data-fw].active')?.dataset?.fw || 'selenium';
+      const lang = document.querySelector('.sw[data-lang].active')?.dataset?.lang || 'java';
+      const files = buildArtifacts({ fw, lang, locs: selected });
+      const keys = Object.keys(files);
+      if(keys.length===0) return toast('Nothing generated', 'error');
+      // download primary file (or all via ZIP)
+      const primary = keys[0];
+      downloadFile(primary, files[primary]);
+    });
+
+    // Download Steps file (if generated)
+    const btnDownloadSteps = NS.$('#btnDownloadSteps');
+    if(btnDownloadSteps) btnDownloadSteps.addEventListener('click', ()=>{
+      const selected = getSelectedLocatorsForGeneration();
+      if(!selected.length) return;
+      const fw = document.querySelector('.sw[data-fw].active')?.dataset?.fw || 'selenium';
+      const lang = document.querySelector('.sw[data-lang].active')?.dataset?.lang || 'java';
+      const files = buildArtifacts({ fw, lang, locs: selected });
+      // find steps-like file
+      const stepsKey = Object.keys(files).find(k=>/step/i.test(k) || k.endsWith('Steps.java') || k.endsWith('.steps.js'));
+      if(!stepsKey) return toast('No steps generated for selected combo', 'error');
+      downloadFile(stepsKey, files[stepsKey]);
+    });
+
+    // Download ZIP All (requires JSZip)
+    const btnZip = NS.$('#btnZipAll');
+    if(btnZip) btnZip.addEventListener('click', async ()=>{
+      if(!window.JSZip){ toast('JSZip required for ZIP (add <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>)', 'error'); return; }
+      const selected = getSelectedLocatorsForGeneration();
+      if(!selected.length) return;
+      const fw = document.querySelector('.sw[data-fw].active')?.dataset?.fw || 'selenium';
+      const lang = document.querySelector('.sw[data-lang].active')?.dataset?.lang || 'java';
+      const files = buildArtifacts({ fw, lang, locs: selected });
+      const zip = new JSZip();
+      Object.keys(files).forEach(k=> zip.file(k, files[k]));
+      const blob = await zip.generateAsync({ type:'blob' });
+      const name = `adhy-artifacts-${fw}-${lang}.zip`;
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      toast('ZIP downloaded', 'success');
+    });
+
+    // Locator tab clicks -> refresh view for that strategy
+    const tabs = NS.$$('#locatorTabs .chip');
+    tabs.forEach(t=>{
+      t.addEventListener('click', ()=>{
+        tabs.forEach(x=>x.classList.remove('active'));
+        t.classList.add('active');
+        renderLocatorList(t.dataset.paneltab || 'basic');
+      });
+    });
+
+    // Ensure Download Output button next to output
+    ensureDownloadOutputButton();
+
+    // Attach preview click handlers after small delay (iframe may load)
+    setTimeout(()=> NS.attachHandlersToPreview(), 600);
+  }
+
+  // download helper
+  function downloadFile(name, content){
+    const blob = new Blob([content], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    toast(`Downloaded ${name}`, 'success');
+  }
+
+  function ensureDownloadOutputButton(){
+    const out = NS.$('#output');
+    if(!out) return;
+    if(document.getElementById('btnDownloadOutput')) return;
+    const btn = document.createElement('button');
+    btn.id = 'btnDownloadOutput';
+    btn.className = 'btn';
+    btn.textContent = 'Download Output';
+    out.parentNode.insertBefore(btn, out.nextSibling);
+    btn.addEventListener('click', ()=>{
+      const txt = out.value || '';
+      if(!txt) return toast('Nothing to download', 'error');
+      const a = document.createElement('a');
+      const blob = new Blob([txt], { type:'text/plain' });
+      a.href = URL.createObjectURL(blob);
+      a.download = 'adhy-output.txt';
+      document.body.appendChild(a); a.click(); a.remove();
+      toast('Output downloaded', 'success');
+    });
+  }
+
+  // ---- attach click-capture inside preview on iframe load and when render happens ----
+  function ensurePreviewClickAttach(){
+    const prev = getPreviewEl();
+    if(!prev) return;
+    try{
+      if(prev.tagName.toLowerCase() === 'iframe'){
+        prev.addEventListener('load', ()=>{
+          try { NS.attachHandlersToPreview(); } catch(e){ console.warn(e); }
+        }, { once:true });
+      } else {
+        NS.attachHandlersToPreview();
+      }
+    } catch(e){ console.warn('ensurePreviewClickAttach', e); }
+  }
+
+  // ---- startup ----
+  function start(){
+    // cache some UI nodes
+    NS.UI.preview = getPreviewEl();
+    NS.UI.locTabs = NS.$('#locatorTabs');
+    wireUI();
+    ensurePreviewClickAttach();
+    // initial small message in locator list
+    const cont = NS.$('#locator-list') || NS.$('#locList');
+    if(cont) cont.innerHTML = `<div class="small" style="color:#9db0c5">Paste HTML → Render Preview → Click elements or Auto-extract → Select elements → Generate POM/Steps</div>`;
+    console.info('offlineXpath.js loaded — version', NS.version);
+  }
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+
+  // expose some functions for debug
+  NS._internal = {
+    genBasicList, genWildList, genAxesList, genFuncList, genSfList, genPegaList, pickBestForElement, buildLocatorObjectFromElement
+  };
+
+})(window);
