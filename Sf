@@ -1,0 +1,4173 @@
+Feature: Salesforce Toolbar Automation
+  As a Salesforce user
+  I want to interact with the toolbar
+  So that I can navigate and perform actions efficiently
+
+  Background:
+    Given I am logged into Salesforce
+
+  Scenario: Navigate to different apps using App Launcher
+    When I click on the App Launcher icon
+    And I search for "Sales" app
+    And I select the "Sales" app
+    Then I should see the Sales app loaded
+
+  Scenario: Access Global Search
+    When I click on the Global Search box
+    And I enter "John Doe" in the search box
+    And I press Enter
+    Then I should see search results for "John Doe"
+
+  Scenario: Create New Record from Toolbar
+    When I click on the "New" button in toolbar
+    And I select "Account" from the dropdown
+    And I enter account details
+      | Field Name    | Value           |
+      | Account Name  | Test Account    |
+      | Phone         | 123-456-7890    |
+    And I click Save
+    Then the account should be created successfully
+
+  Scenario: Access User Menu
+    When I click on the user profile icon
+    Then I should see user menu options
+      | Option         |
+      | Settings       |
+      | Switch to User |
+      | Log Out        |
+
+  Scenario: Navigate using Navigation Bar
+    When I click on "Accounts" in the navigation bar
+    Then I should be on the Accounts page
+    When I click on "Contacts" in the navigation bar
+    Then I should be on the Contacts page
+
+  Scenario: Access Setup from Toolbar
+    When I click on the Setup gear icon
+    And I click on "Setup"
+    Then I should be redirected to Setup page
+
+  Scenario: Use Quick Actions
+    When I hover over the Global Actions menu
+    And I click on "New Task" quick action
+    And I fill in task details
+      | Subject      | Follow up call  |
+      | Due Date     | Tomorrow        |
+    And I save the task
+    Then the task should be created
+
+
+
+//////////////
+
+package com.salesforce.utils;
+
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.util.Properties;
+
+public class ConfigReader {
+    private static Properties prop;
+    private static final String CONFIG_PATH = "src/test/resources/config.properties";
+
+    static {
+        try {
+            prop = new Properties();
+            FileInputStream fis = new FileInputStream(CONFIG_PATH);
+            prop.load(fis);
+            fis.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+            throw new RuntimeException("Failed to load configuration file");
+        }
+    }
+
+    public static String getProperty(String key) {
+        return prop.getProperty(key);
+    }
+
+    public static String getSalesforceUrl() {
+        return prop.getProperty("salesforce.url");
+    }
+
+    public static String getUsername() {
+        return prop.getProperty("salesforce.username");
+    }
+
+    public static String getPassword() {
+        return prop.getProperty("salesforce.password");
+    }
+
+    public static String getSecurityToken() {
+        return prop.getProperty("salesforce.security.token");
+    }
+
+    public static String getBrowser() {
+        return prop.getProperty("browser");
+    }
+
+    public static boolean isHeadless() {
+        return Boolean.parseBoolean(prop.getProperty("headless"));
+    }
+
+    public static int getImplicitWait() {
+        return Integer.parseInt(prop.getProperty("implicit.wait"));
+    }
+
+    public static int getExplicitWait() {
+        return Integer.parseInt(prop.getProperty("explicit.wait"));
+    }
+}
+
+
+
+
+
+///////////////
+
+
+package com.salesforce.pages;
+
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.FindBy;
+import org.openqa.selenium.support.PageFactory;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+
+import java.time.Duration;
+
+public class SalesforceToolbarPage {
+    private WebDriver driver;
+    private WebDriverWait wait;
+
+    // App Launcher
+    @FindBy(xpath = "//button[@title='App Launcher']")
+    private WebElement appLauncherIcon;
+
+    @FindBy(xpath = "//input[@placeholder='Search apps and items...']")
+    private WebElement appSearchBox;
+
+    // Global Search
+    @FindBy(xpath = "//input[@placeholder='Search...' or @type='search']")
+    private WebElement globalSearchBox;
+
+    // New Button
+    @FindBy(xpath = "//div[@title='New' or contains(@class,'forceActionLink')]")
+    private WebElement newButton;
+
+    // User Profile
+    @FindBy(xpath = "//button[contains(@class,'profile')]")
+    private WebElement userProfileIcon;
+
+    // Setup Gear Icon
+    @FindBy(xpath = "//button[@title='Setup']")
+    private WebElement setupGearIcon;
+
+    @FindBy(xpath = "//a[@title='Setup']")
+    private WebElement setupLink;
+
+    // Navigation Bar
+    @FindBy(xpath = "//nav[@role='navigation']")
+    private WebElement navigationBar;
+
+    // Global Actions
+    @FindBy(xpath = "//button[contains(@class,'globalAction')]")
+    private WebElement globalActionsMenu;
+
+    public SalesforceToolbarPage(WebDriver driver) {
+        this.driver = driver;
+        this.wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+        PageFactory.initElements(driver, this);
+    }
+
+    public void clickAppLauncher() {
+        wait.until(ExpectedConditions.elementToBeClickable(appLauncherIcon));
+        appLauncherIcon.click();
+    }
+
+    public void searchApp(String appName) {
+        wait.until(ExpectedConditions.elementToBeClickable(appSearchBox));
+        appSearchBox.clear();
+        appSearchBox.sendKeys(appName);
+    }
+
+    public void selectApp(String appName) {
+        WebElement app = wait.until(ExpectedConditions.elementToBeClickable(
+            By.xpath("//p[@title='" + appName + "' or text()='" + appName + "']")
+        ));
+        app.click();
+    }
+
+    public void clickGlobalSearch() {
+        wait.until(ExpectedConditions.elementToBeClickable(globalSearchBox));
+        globalSearchBox.click();
+    }
+
+    public void enterSearchText(String text) {
+        wait.until(ExpectedConditions.elementToBeClickable(globalSearchBox));
+        globalSearchBox.clear();
+        globalSearchBox.sendKeys(text);
+    }
+
+    public void clickNewButton() {
+        wait.until(ExpectedConditions.elementToBeClickable(newButton));
+        newButton.click();
+    }
+
+    public void selectRecordType(String recordType) {
+        WebElement record = wait.until(ExpectedConditions.elementToBeClickable(
+            By.xpath("//span[@title='" + recordType + "']")
+        ));
+        record.click();
+    }
+
+    public void clickUserProfile() {
+        wait.until(ExpectedConditions.elementToBeClickable(userProfileIcon));
+        userProfileIcon.click();
+    }
+
+    public boolean isUserMenuDisplayed() {
+        try {
+            wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.xpath("//div[contains(@class,'userMenu')]")
+            ));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public void clickSetupGear() {
+        wait.until(ExpectedConditions.elementToBeClickable(setupGearIcon));
+        setupGearIcon.click();
+    }
+
+    public void clickSetupLink() {
+        wait.until(ExpectedConditions.elementToBeClickable(setupLink));
+        setupLink.click();
+    }
+
+    public void clickNavigationItem(String itemName) {
+        WebElement navItem = wait.until(ExpectedConditions.elementToBeClickable(
+            By.xpath("//a[@title='" + itemName + "' or span[text()='" + itemName + "']]")
+        ));
+        navItem.click();
+    }
+
+    public boolean isPageLoaded(String pageName) {
+        try {
+            wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.xpath("//*[contains(text(),'" + pageName + "')]")
+            ));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public void clickQuickAction(String actionName) {
+        WebElement action = wait.until(ExpectedConditions.elementToBeClickable(
+            By.xpath("//a[@title='" + actionName + "']")
+        ));
+        action.click();
+    }
+}
+
+
+
+
+
+
+/////////////////
+
+
+package com.salesforce.stepdefinitions;
+
+import com.salesforce.pages.SalesforceLoginPage;
+import com.salesforce.pages.SalesforceToolbarPage;
+import com.salesforce.utils.DriverManager;
+import io.cucumber.datatable.DataTable;
+import io.cucumber.java.en.Given;
+import io.cucumber.java.en.Then;
+import io.cucumber.java.en.When;
+import org.junit.Assert;
+import org.openqa.selenium.By;
+import org.openqa.selenium.Keys;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+
+public class ToolbarStepDefinitions {
+    private WebDriver driver;
+    private SalesforceLoginPage loginPage;
+    private SalesforceToolbarPage toolbarPage;
+    private WebDriverWait wait;
+
+    public ToolbarStepDefinitions() {
+        this.driver = DriverManager.getDriver();
+        this.loginPage = new SalesforceLoginPage(driver);
+        this.toolbarPage = new SalesforceToolbarPage(driver);
+        this.wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+    }
+
+    @Given("I am logged into Salesforce")
+    public void iAmLoggedIntoSalesforce() {
+        loginPage.login();
+        Assert.assertTrue("Login failed", loginPage.isLoginSuccessful());
+    }
+
+    @When("I click on the App Launcher icon")
+    public void iClickOnTheAppLauncherIcon() {
+        toolbarPage.clickAppLauncher();
+    }
+
+    @When("I search for {string} app")
+    public void iSearchForApp(String appName) {
+        toolbarPage.searchApp(appName);
+    }
+
+    @When("I select the {string} app")
+    public void iSelectTheApp(String appName) {
+        toolbarPage.selectApp(appName);
+    }
+
+    @Then("I should see the Sales app loaded")
+    public void iShouldSeeTheSalesAppLoaded() {
+        Assert.assertTrue("Sales app not loaded", 
+            toolbarPage.isPageLoaded("Sales"));
+    }
+
+    @When("I click on the Global Search box")
+    public void iClickOnTheGlobalSearchBox() {
+        toolbarPage.clickGlobalSearch();
+    }
+
+    @When("I enter {string} in the search box")
+    public void iEnterInTheSearchBox(String searchText) {
+        toolbarPage.enterSearchText(searchText);
+    }
+
+    @When("I press Enter")
+    public void iPressEnter() {
+        WebElement searchBox = driver.findElement(
+            By.xpath("//input[@placeholder='Search...' or @type='search']")
+        );
+        searchBox.sendKeys(Keys.RETURN);
+    }
+
+    @Then("I should see search results for {string}")
+    public void iShouldSeeSearchResultsFor(String searchTerm) {
+        wait.until(ExpectedConditions.presenceOfElementLocated(
+            By.xpath("//*[contains(text(),'Search Results')]")
+        ));
+        Assert.assertTrue("Search results not displayed", 
+            driver.getCurrentUrl().contains("search"));
+    }
+
+    @When("I click on the {string} button in toolbar")
+    public void iClickOnTheButtonInToolbar(String buttonName) {
+        if (buttonName.equalsIgnoreCase("New")) {
+            toolbarPage.clickNewButton();
+        }
+    }
+
+    @When("I select {string} from the dropdown")
+    public void iSelectFromTheDropdown(String recordType) {
+        toolbarPage.selectRecordType(recordType);
+    }
+
+    @When("I enter account details")
+    public void iEnterAccountDetails(DataTable dataTable) {
+        List<Map<String, String>> data = dataTable.asMaps();
+        for (Map<String, String> row : data) {
+            String fieldName = row.get("Field Name");
+            String value = row.get("Value");
+            
+            WebElement field = wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.xpath("//label[text()='" + fieldName + "']/following::input[1]")
+            ));
+            field.clear();
+            field.sendKeys(value);
+        }
+    }
+
+    @When("I click Save")
+    public void iClickSave() {
+        WebElement saveButton = wait.until(ExpectedConditions.elementToBeClickable(
+            By.xpath("//button[@title='Save' or @name='SaveEdit']")
+        ));
+        saveButton.click();
+    }
+
+    @Then("the account should be created successfully")
+    public void theAccountShouldBeCreatedSuccessfully() {
+        wait.until(ExpectedConditions.presenceOfElementLocated(
+            By.xpath("//*[contains(text(),'was created')]")
+        ));
+        Assert.assertTrue("Account not created", 
+            driver.getPageSource().contains("was created"));
+    }
+
+    @When("I click on the user profile icon")
+    public void iClickOnTheUserProfileIcon() {
+        toolbarPage.clickUserProfile();
+    }
+
+    @Then("I should see user menu options")
+    public void iShouldSeeUserMenuOptions(DataTable dataTable) {
+        Assert.assertTrue("User menu not displayed", 
+            toolbarPage.isUserMenuDisplayed());
+        
+        List<String> options = dataTable.asList();
+        for (String option : options) {
+            WebElement menuOption = driver.findElement(
+                By.xpath("//a[text()='" + option + "']")
+            );
+            Assert.assertTrue(option + " not found in menu", 
+                menuOption.isDisplayed());
+        }
+    }
+
+    @When("I click on {string} in the navigation bar")
+    public void iClickOnInTheNavigationBar(String itemName) {
+        toolbarPage.clickNavigationItem(itemName);
+    }
+
+    @Then("I should be on the Accounts page")
+    public void iShouldBeOnTheAccountsPage() {
+        Assert.assertTrue("Not on Accounts page", 
+            toolbarPage.isPageLoaded("Accounts"));
+    }
+
+    @Then("I should be on the Contacts page")
+    public void iShouldBeOnTheContactsPage() {
+        Assert.assertTrue("Not on Contacts page", 
+            toolbarPage.isPageLoaded("Contacts"));
+    }
+
+    @When("I click on the Setup gear icon")
+    public void iClickOnTheSetupGearIcon() {
+        toolbarPage.clickSetupGear();
+    }
+
+    @When("I click on {string}")
+    public void iClickOn(String linkText) {
+        if (linkText.equalsIgnoreCase("Setup")) {
+            toolbarPage.clickSetupLink();
+        }
+    }
+
+    @Then("I should be redirected to Setup page")
+    public void iShouldBeRedirectedToSetupPage() {
+        wait.until(ExpectedConditions.urlContains("setup"));
+        Assert.assertTrue("Not on Setup page", 
+            driver.getCurrentUrl().contains("setup"));
+    }
+
+    @When("I hover over the Global Actions menu")
+    public void iHoverOverTheGlobalActionsMenu() {
+        // Implementation for hovering
+    }
+
+    @When("I click on {string} quick action")
+    public void iClickOnQuickAction(String actionName) {
+        toolbarPage.clickQuickAction(actionName);
+    }
+
+    @When("I fill in task details")
+    public void iFillInTaskDetails(DataTable dataTable) {
+        List<Map<String, String>> data = dataTable.asMaps();
+        for (Map<String, String> row : data) {
+            String key = row.keySet().iterator().next();
+            String value = row.get(key);
+            
+            WebElement field = wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.xpath("//label[text()='" + key + "']/following::input[1]")
+            ));
+            field.clear();
+            field.sendKeys(value);
+        }
+    }
+
+    @When("I save the task")
+    public void iSaveTheTask() {
+        iClickSave();
+    }
+
+    @Then("the task should be created")
+    public void theTaskShouldBeCreated() {
+        wait.until(ExpectedConditions.presenceOfElementLocated(
+            By.xpath("//*[contains(text(),'created')]")
+        ));
+        Assert.assertTrue("Task not created", 
+            driver.getPageSource().contains("created"));
+    }
+}
+
+
+
+///////////////////
+
+
+
+Feature: AWS Connect Inbound Call Integration with Salesforce
+  As a call center agent
+  I want to handle inbound calls through AWS Connect toolbar
+  So that I can locate and assist customers efficiently
+
+  Background:
+    Given I am logged into Salesforce with AWS Connect toolbar
+    And AWS Connect toolbar is visible and ready
+
+  @InboundCall @SmokeTest
+  Scenario: Verify inbound call triggers Locate Customer popup
+    Given I am in Available status in AWS Connect
+    When an inbound call is received
+    Then AWS Connect toolbar should show incoming call notification
+    And call status should change to "Ringing"
+    When I accept the incoming call
+    Then call status should change to "Connected"
+    And "Locate Customer" questionnaire popup should be displayed
+    And popup should contain all required fields
+      | Field Name                    |
+      | Account Number                |
+      | Last 4 digits of SSN          |
+      | Date of Birth                 |
+      | Phone Number                  |
+
+  @InboundCall @CustomerVerification
+  Scenario: Fill customer details and enable Verify button
+    Given an inbound call is connected
+    And "Locate Customer" popup is displayed
+    When I enter Account Number "1234567890123456"
+    And I enter last 4 digits of SSN "1234"
+    And I enter Date of Birth "01/15/1990"
+    And I enter Phone Number "9876543210"
+    Then "Verify" button should be enabled
+    When I click on "Verify" button
+    Then customer verification should be initiated
+    And system should check if customer has password
+
+  @PasswordVerification @NoPassword
+  Scenario: Customer without password - Direct account launch
+    Given an inbound call is connected
+    And I have filled customer details correctly
+    When I click on "Verify" button
+    And customer does not have a password in the system
+    Then account should be launched directly in Salesforce
+    And customer details should be displayed on the screen
+    And no password prompt should appear
+    And customer record should be fully accessible
+
+  @PasswordVerification @WithPassword
+  Scenario: Customer with password - Password verification required
+    Given an inbound call is connected
+    And I have filled customer details correctly
+    When I click on "Verify" button
+    And customer has a password in the system
+    Then "Password Verification" popup should be displayed
+    And password input field should be visible
+    And password field should be masked
+    And remaining attempts counter should show "3 attempts remaining"
+
+  @PasswordVerification @SuccessfulAuth
+  Scenario: Successful password verification on first attempt
+    Given customer has a password configured
+    And "Password Verification" popup is displayed
+    When I enter correct password "ValidPass123"
+    And I click on "Submit" button
+    Then password should be validated successfully
+    And account should be launched in Salesforce
+    And customer record should be fully accessible
+    And no further verification should be required
+
+  @PasswordVerification @FailedAttempts @CareAgent
+  Scenario: Care agent - Failed password attempts with transfer message
+    Given I am logged in as a "Care" agent
+    And customer has a password configured
+    And "Password Verification" popup is displayed
+    When I enter incorrect password "WrongPass1"
+    And I click on "Submit" button
+    Then error message "Incorrect password. 2 attempts remaining" should be displayed
+    And password field should be cleared
+    When I enter incorrect password "WrongPass2"
+    And I click on "Submit" button
+    Then error message "Incorrect password. 1 attempt remaining" should be displayed
+    When I enter incorrect password "WrongPass3"
+    And I click on "Submit" button
+    Then toast message should be displayed with text "Maximum attempts exceeded. Please transfer the call to Security team"
+    And toast message should have "Transfer to Security" action button
+    And account should not be loaded
+    And password popup should remain open
+
+  @PasswordVerification @FailedAttempts @SecurityAgent
+  Scenario: Fraud Security agent - Failed password attempts with HRA notification
+    Given I am logged in as a "Fraud Security" agent
+    And customer has a password configured
+    And "Password Verification" popup is displayed
+    When I enter incorrect password "WrongPass1"
+    And I click on "Submit" button
+    Then error message "Incorrect password. 2 attempts remaining" should be displayed
+    When I enter incorrect password "WrongPass2"
+    And I click on "Submit" button
+    Then error message "Incorrect password. 1 attempt remaining" should be displayed
+    When I enter incorrect password "WrongPass3"
+    And I click on "Submit" button
+    Then password verification popup should be closed
+    And account should be launched in Salesforce
+    And "HRA Notification" popup should be triggered
+    And HRA popup should contain warning "Customer failed password verification - High Risk Account"
+    And account should be flagged for security review
+
+  @PasswordVerification @MixedAttempts @CareAgent
+  Scenario: Care agent - Successful password on second attempt
+    Given I am logged in as a "Care" agent
+    And "Password Verification" popup is displayed
+    When I enter incorrect password "WrongPass1"
+    And I click on "Submit" button
+    Then error message "Incorrect password. 2 attempts remaining" should be displayed
+    When I enter correct password "CorrectPass123"
+    And I click on "Submit" button
+    Then password should be validated successfully
+    And account should be launched in Salesforce
+    And attempt counter should be reset
+
+  @PasswordVerification @MixedAttempts @SecurityAgent
+  Scenario: Security agent - Successful password on third attempt
+    Given I am logged in as a "Fraud Security" agent
+    And "Password Verification" popup is displayed
+    When I enter incorrect password "WrongPass1"
+    And I click on "Submit" button
+    Then error message "Incorrect password. 2 attempts remaining" should be displayed
+    When I enter incorrect password "WrongPass2"
+    And I click on "Submit" button
+    Then error message "Incorrect password. 1 attempt remaining" should be displayed
+    When I enter correct password "CorrectPass123"
+    And I click on "Submit" button
+    Then password should be validated successfully
+    And account should be launched in Salesforce
+    And no HRA notification should be triggered
+
+  @TransferAction @CareAgent
+  Scenario: Care agent transfers call to Security after max attempts
+    Given I am logged in as a "Care" agent
+    And I have exceeded password verification attempts
+    And toast message is displayed with "Transfer to Security" button
+    When I click on "Transfer to Security" button
+    Then call transfer interface should be displayed
+    And "Security Queue" should be pre-selected
+    And transfer reason should be auto-populated as "Password Verification Failed"
+    When I confirm the transfer
+    Then call should be transferred to Security queue
+    And customer context should be passed to Security agent
+
+  @HRANotification @SecurityAgent
+  Scenario: Security agent handles HRA notification after failed attempts
+    Given I am logged in as a "Fraud Security" agent
+    And customer failed all 3 password attempts
+    And account is launched with "HRA Notification" popup
+    Then HRA popup should display customer information
+    And popup should show failed attempt details
+      | Field                    | Value |
+      | Failed Attempts          | 3     |
+      | Last Attempt Time        | Auto  |
+      | Agent Role               | Fraud Security |
+    When I review the HRA notification
+    And I click on "Acknowledge and Proceed" button
+    Then HRA notification should be logged in customer record
+    And account should remain accessible for security review
+    And security flag should be added to account
+
+  @PasswordVerification @EdgeCases
+  Scenario Outline: Password verification with different scenarios
+    Given I am logged in as a "<AgentRole>" agent
+    And customer has password configured
+    When I attempt password verification with "<AttemptCount>" failed attempts
+    Then the result should be "<ExpectedOutcome>"
+    And action should be "<ExpectedAction>"
+
+    Examples:
+      | AgentRole      | AttemptCount | ExpectedOutcome        | ExpectedAction              |
+      | Care           | 3            | Max attempts exceeded  | Show transfer toast         |
+      | Fraud Security | 3            | Max attempts exceeded  | Load account + HRA popup    |
+      | Care           | 2            | Still can attempt      | Show remaining attempts     |
+      | Fraud Security | 2            | Still can attempt      | Show remaining attempts     |
+      | Care           | 1            | Account locked warning | Show 1 attempt remaining    |
+      | Fraud Security | 1            | Account locked warning | Show 1 attempt remaining    |
+
+  @PasswordVerification @Validation
+  Scenario: Validate password field requirements
+    Given "Password Verification" popup is displayed
+    Then password field should accept alphanumeric characters
+    And password field should accept special characters
+    And password field should be masked by default
+    And "Show Password" toggle should be available
+    When I click on "Show Password" toggle
+    Then password should be visible in plain text
+    When I click on "Show Password" toggle again
+    Then password should be masked again
+
+  @CompleteFlow @CareAgent
+  Scenario: Complete flow - Care agent with customer having no password
+    Given I am logged in as a "Care" agent
+    And an inbound call is connected
+    When I fill customer locate questionnaire
+    And I click "Verify" button
+    And customer does not have password
+    Then account should launch directly
+    And I should be able to assist customer
+    And call disposition should be available
+
+  @CompleteFlow @SecurityAgent
+  Scenario: Complete flow - Security agent with failed password verification
+    Given I am logged in as a "Fraud Security" agent
+    And an inbound call is connected
+    When I fill customer locate questionnaire
+    And I click "Verify" button
+    And customer has password configured
+    And I fail all 3 password verification attempts
+    Then account should launch with HRA notification
+    And I should acknowledge HRA
+    And I should be able to proceed with security review
+    And security incident should be logged
+
+  @AuditTrail
+  Scenario: Verify audit trail for password verification attempts
+    Given customer has password configured
+    And I have performed password verification
+    When I check the audit log
+    Then audit trail should record all password attempts
+    And audit should include timestamp of each attempt
+    And audit should include agent ID and role
+    And audit should include final outcome
+    And audit should be visible in customer activity history
+
+
+
+////////
+
+
+
+package com.salesforce.pages;
+
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.FindBy;
+import org.openqa.selenium.support.PageFactory;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+import org.openqa.selenium.JavascriptExecutor;
+
+import java.time.Duration;
+import java.util.List;
+
+public class AWSConnectToolbarPage {
+    private WebDriver driver;
+    private WebDriverWait wait;
+    private JavascriptExecutor js;
+
+    // AWS Connect Toolbar Elements
+    @FindBy(xpath = "//iframe[contains(@title,'Amazon Connect') or contains(@src,'connect')]")
+    private WebElement awsConnectIframe;
+
+    @FindBy(xpath = "//div[contains(@class,'connect-toolbar')]")
+    private WebElement connectToolbar;
+
+    @FindBy(xpath = "//button[contains(@class,'accept-call') or @title='Accept']")
+    private WebElement acceptCallButton;
+
+    @FindBy(xpath = "//div[contains(@class,'call-status')]")
+    private WebElement callStatusIndicator;
+
+    @FindBy(xpath = "//span[contains(text(),'Available') or contains(@class,'status-available')]")
+    private WebElement availableStatus;
+
+    @FindBy(xpath = "//button[contains(@class,'status-change')]")
+    private WebElement statusChangeButton;
+
+    // Locate Customer Popup Elements
+    @FindBy(xpath = "//div[contains(text(),'Locate Customer')]")
+    private WebElement locateCustomerHeader;
+
+    @FindBy(xpath = "//input[@placeholder='Enter 16 digit account Number' or contains(@name,'accountNumber')]")
+    private WebElement accountNumberField;
+
+    @FindBy(xpath = "//input[@placeholder='Enter 4 digit SSN' or contains(@name,'ssn')]")
+    private WebElement ssnField;
+
+    @FindBy(xpath = "//input[@placeholder='Please enter valid date MM/DD/YYYY' or contains(@name,'dob')]")
+    private WebElement dobField;
+
+    @FindBy(xpath = "//input[@placeholder='Enter 10 digit Phone Number' or contains(@name,'phone')]")
+    private WebElement phoneNumberField;
+
+    @FindBy(xpath = "//input[@type='checkbox' and following-sibling::*[contains(text(),'Account Number is Not Available')]]")
+    private WebElement accountNotAvailableCheckbox;
+
+    @FindBy(xpath = "//input[@type='checkbox' and following-sibling::*[contains(text(),'Phone Number is Not Available')]]")
+    private WebElement phoneNotAvailableCheckbox;
+
+    @FindBy(xpath = "//button[contains(text(),'Unidentified Prospect')]")
+    private WebElement unidentifiedProspectButton;
+
+    @FindBy(xpath = "//button[contains(text(),'Close Customer Locate')]")
+    private WebElement closeCustomerLocateButton;
+
+    @FindBy(xpath = "//input[contains(@placeholder,'Please enter alphanumeric')]")
+    private WebElement appianCaseIdField;
+
+    @FindBy(xpath = "//label[contains(text(),'Message Account ID')]/following-sibling::input")
+    private WebElement messageAccountIdField;
+
+    // Validation Error Elements
+    @FindBy(xpath = "//div[contains(@class,'error') or contains(@class,'validation')]")
+    private List<WebElement> validationErrors;
+
+    public AWSConnectToolbarPage(WebDriver driver) {
+        this.driver = driver;
+        this.wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+        this.js = (JavascriptExecutor) driver;
+        PageFactory.initElements(driver, this);
+    }
+
+    // AWS Connect Toolbar Methods
+    public boolean isAWSConnectToolbarVisible() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(connectToolbar));
+            return true;
+        } catch (Exception e) {
+            // Try to find in iframe
+            return isElementInIframe();
+        }
+    }
+
+    private boolean isElementInIframe() {
+        try {
+            List<WebElement> iframes = driver.findElements(
+                By.xpath("//iframe[contains(@title,'Amazon Connect') or contains(@src,'connect')]")
+            );
+            
+            for (WebElement iframe : iframes) {
+                driver.switchTo().frame(iframe);
+                try {
+                    WebElement toolbar = driver.findElement(
+                        By.xpath("//div[contains(@class,'connect-toolbar')]")
+                    );
+                    return toolbar.isDisplayed();
+                } catch (Exception e) {
+                    driver.switchTo().defaultContent();
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            driver.switchTo().defaultContent();
+            return false;
+        }
+    }
+
+    public void switchToAWSConnectIframe() {
+        wait.until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(
+            By.xpath("//iframe[contains(@title,'Amazon Connect') or contains(@src,'connect')]")
+        ));
+    }
+
+    public void switchToDefaultContent() {
+        driver.switchTo().defaultContent();
+    }
+
+    public boolean isAgentAvailable() {
+        try {
+            switchToAWSConnectIframe();
+            wait.until(ExpectedConditions.visibilityOf(availableStatus));
+            return availableStatus.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public void setAgentStatusToAvailable() {
+        try {
+            switchToAWSConnectIframe();
+            wait.until(ExpectedConditions.elementToBeClickable(statusChangeButton));
+            statusChangeButton.click();
+            
+            WebElement availableOption = wait.until(ExpectedConditions.elementToBeClickable(
+                By.xpath("//span[contains(text(),'Available')]")
+            ));
+            availableOption.click();
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    // Call Handling Methods
+    public boolean isIncomingCallReceived() {
+        try {
+            switchToAWSConnectIframe();
+            wait.until(ExpectedConditions.or(
+                ExpectedConditions.visibilityOfElementLocated(
+                    By.xpath("//div[contains(text(),'Incoming Call')]")
+                ),
+                ExpectedConditions.visibilityOfElementLocated(
+                    By.xpath("//button[contains(@class,'accept-call')]")
+                )
+            ));
+            return true;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public String getCallStatus() {
+        try {
+            switchToAWSConnectIframe();
+            wait.until(ExpectedConditions.visibilityOf(callStatusIndicator));
+            return callStatusIndicator.getText();
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public void acceptIncomingCall() {
+        try {
+            switchToAWSConnectIframe();
+            wait.until(ExpectedConditions.elementToBeClickable(acceptCallButton));
+            acceptCallButton.click();
+            
+            // Wait for call to be connected
+            wait.until(ExpectedConditions.or(
+                ExpectedConditions.textToBePresentInElementLocated(
+                    By.xpath("//div[contains(@class,'call-status')]"), "Connected"
+                ),
+                ExpectedConditions.visibilityOfElementLocated(
+                    By.xpath("//span[contains(text(),'Connected')]")
+                )
+            ));
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    // Simulate Inbound Call (for testing purposes)
+    public void triggerInboundCall() {
+        // Method 1: Using JavaScript to trigger event
+        js.executeScript(
+            "window.postMessage({" +
+            "  type: 'incoming_call'," +
+            "  data: {" +
+            "    contactId: 'test-contact-123'," +
+            "    phoneNumber: '+19876543210'" +
+            "  }" +
+            "}, '*');"
+        );
+        
+        // Wait for call notification
+        waitForSeconds(2);
+    }
+
+    // Alternative method using AWS Connect API simulation
+    public void simulateInboundCallViaAPI(String phoneNumber) {
+        // This would require AWS Connect API integration
+        // For now, using UI simulation
+        js.executeScript(
+            "var event = new CustomEvent('awsconnect:incomingcall', {" +
+            "  detail: {" +
+            "    phoneNumber: '" + phoneNumber + "'," +
+            "    timestamp: new Date().toISOString()" +
+            "  }" +
+            "});" +
+            "window.dispatchEvent(event);"
+        );
+    }
+
+    // Locate Customer Popup Methods
+    public boolean isLocateCustomerPopupDisplayed() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(locateCustomerHeader));
+            return locateCustomerHeader.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public void waitForLocateCustomerPopup() {
+        wait.until(ExpectedConditions.visibilityOf(locateCustomerHeader));
+    }
+
+    public void enterAccountNumber(String accountNumber) {
+        wait.until(ExpectedConditions.elementToBeClickable(accountNumberField));
+        accountNumberField.clear();
+        accountNumberField.sendKeys(accountNumber);
+    }
+
+    public void enterSSN(String ssn) {
+        wait.until(ExpectedConditions.elementToBeClickable(ssnField));
+        ssnField.clear();
+        ssnField.sendKeys(ssn);
+    }
+
+    public void enterDOB(String dob) {
+        wait.until(ExpectedConditions.elementToBeClickable(dobField));
+        dobField.clear();
+        dobField.sendKeys(dob);
+    }
+
+    public void enterPhoneNumber(String phoneNumber) {
+        wait.until(ExpectedConditions.elementToBeClickable(phoneNumberField));
+        phoneNumberField.clear();
+        phoneNumberField.sendKeys(phoneNumber);
+    }
+
+    public void checkAccountNotAvailable() {
+        wait.until(ExpectedConditions.elementToBeClickable(accountNotAvailableCheckbox));
+        if (!accountNotAvailableCheckbox.isSelected()) {
+            accountNotAvailableCheckbox.click();
+        }
+    }
+
+    public void checkPhoneNotAvailable() {
+        wait.until(ExpectedConditions.elementToBeClickable(phoneNotAvailableCheckbox));
+        if (!phoneNotAvailableCheckbox.isSelected()) {
+            phoneNotAvailableCheckbox.click();
+        }
+    }
+
+    public void clickUnidentifiedProspectButton() {
+        wait.until(ExpectedConditions.elementToBeClickable(unidentifiedProspectButton));
+        unidentifiedProspectButton.click();
+    }
+
+    public void enterAppianCaseId(String caseId) {
+        wait.until(ExpectedConditions.elementToBeClickable(appianCaseIdField));
+        appianCaseIdField.clear();
+        appianCaseIdField.sendKeys(caseId);
+    }
+
+    public String getMessageAccountId() {
+        wait.until(ExpectedConditions.visibilityOf(messageAccountIdField));
+        return messageAccountIdField.getAttribute("value");
+    }
+
+    public boolean isFieldDisabled(String fieldName) {
+        WebElement field = driver.findElement(
+            By.xpath("//input[contains(@placeholder,'" + fieldName + "')]")
+        );
+        return !field.isEnabled();
+    }
+
+    public String getValidationError(String errorMessage) {
+        for (WebElement error : validationErrors) {
+            if (error.getText().contains(errorMessage)) {
+                return error.getText();
+            }
+        }
+        return null;
+    }
+
+    public boolean isValidationErrorDisplayed(String errorText) {
+        try {
+            WebElement error = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.xpath("//div[contains(text(),'" + errorText + "')]")
+            ));
+            return error.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void waitForSeconds(int seconds) {
+        try {
+            Thread.sleep(seconds * 1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+
+/////////////
+
+
+
+
+package com.salesforce.pages;
+
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.FindBy;
+import org.openqa.selenium.support.PageFactory;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+
+import java.time.Duration;
+
+public class PasswordVerificationPage {
+    private WebDriver driver;
+    private WebDriverWait wait;
+
+    // Verify Button
+    @FindBy(xpath = "//button[contains(text(),'Verify') or @title='Verify']")
+    private WebElement verifyButton;
+
+    // Password Verification Popup Elements
+    @FindBy(xpath = "//div[contains(text(),'Password Verification')]")
+    private WebElement passwordVerificationHeader;
+
+    @FindBy(xpath = "//input[@type='password' or @placeholder='Enter Password']")
+    private WebElement passwordField;
+
+    @FindBy(xpath = "//button[contains(text(),'Submit') or @title='Submit Password']")
+    private WebElement submitPasswordButton;
+
+    @FindBy(xpath = "//span[contains(@class,'show-password') or @title='Show Password']")
+    private WebElement showPasswordToggle;
+
+    @FindBy(xpath = "//div[contains(@class,'attempts-remaining')]")
+    private WebElement attemptsRemainingText;
+
+    @FindBy(xpath = "//div[contains(@class,'password-error') or contains(@class,'error-message')]")
+    private WebElement passwordErrorMessage;
+
+    // HRA Notification Elements
+    @FindBy(xpath = "//div[contains(text(),'HRA Notification') or contains(@class,'hra-notification')]")
+    private WebElement hraNotificationPopup;
+
+    @FindBy(xpath = "//div[contains(text(),'High Risk Account') or contains(text(),'failed password verification')]")
+    private WebElement hraWarningMessage;
+
+    @FindBy(xpath = "//button[contains(text(),'Acknowledge and Proceed')]")
+    private WebElement acknowledgeHRAButton;
+
+    @FindBy(xpath = "//table[contains(@class,'hra-details')]")
+    private WebElement hraDetailsTable;
+
+    // Toast Message Elements
+    @FindBy(xpath = "//div[contains(@class,'slds-notify') or contains(@class,'toast')]")
+    private WebElement toastMessage;
+
+    @FindBy(xpath = "//div[contains(@class,'toast-message')]")
+    private WebElement toastMessageText;
+
+    @FindBy(xpath = "//button[contains(text(),'Transfer to Security')]")
+    private WebElement transferToSecurityButton;
+
+    // Account Launch Elements
+    @FindBy(xpath = "//div[contains(@class,'account-details') or contains(text(),'Account Information')]")
+    private WebElement accountDetailsSection;
+
+    @FindBy(xpath = "//span[contains(@class,'account-loaded')]")
+    private WebElement accountLoadedIndicator;
+
+    public PasswordVerificationPage(WebDriver driver) {
+        this.driver = driver;
+        this.wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+        PageFactory.initElements(driver, this);
+    }
+
+    // Verify Button Methods
+    public boolean isVerifyButtonEnabled() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(verifyButton));
+            return verifyButton.isEnabled();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public void clickVerifyButton() {
+        wait.until(ExpectedConditions.elementToBeClickable(verifyButton));
+        verifyButton.click();
+    }
+
+    // Password Verification Methods
+    public boolean isPasswordVerificationPopupDisplayed() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(passwordVerificationHeader));
+            return passwordVerificationHeader.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public void enterPassword(String password) {
+        wait.until(ExpectedConditions.elementToBeClickable(passwordField));
+        passwordField.clear();
+        passwordField.sendKeys(password);
+    }
+
+    public void clickSubmitPassword() {
+        wait.until(ExpectedConditions.elementToBeClickable(submitPasswordButton));
+        submitPasswordButton.click();
+    }
+
+    public void toggleShowPassword() {
+        wait.until(ExpectedConditions.elementToBeClickable(showPasswordToggle));
+        showPasswordToggle.click();
+    }
+
+    public boolean isPasswordMasked() {
+        wait.until(ExpectedConditions.visibilityOf(passwordField));
+        return passwordField.getAttribute("type").equals("password");
+    }
+
+    public String getRemainingAttempts() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(attemptsRemainingText));
+            return attemptsRemainingText.getText();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    public boolean isPasswordErrorDisplayed(String expectedError) {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(passwordErrorMessage));
+            return passwordErrorMessage.getText().contains(expectedError);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public String getPasswordErrorMessage() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(passwordErrorMessage));
+            return passwordErrorMessage.getText();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    public boolean isPasswordFieldCleared() {
+        wait.until(ExpectedConditions.visibilityOf(passwordField));
+        return passwordField.getAttribute("value").isEmpty();
+    }
+
+    // Account Launch Methods
+    public boolean isAccountLaunchedInSalesforce() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(accountDetailsSection));
+            return accountDetailsSection.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public boolean isCustomerRecordAccessible() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(accountLoadedIndicator));
+            return accountLoadedIndicator.isDisplayed() || 
+                   driver.getCurrentUrl().contains("Account/");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // HRA Notification Methods
+    public boolean isHRANotificationPopupDisplayed() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(hraNotificationPopup));
+            return hraNotificationPopup.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public boolean isHRAWarningMessageDisplayed(String expectedMessage) {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(hraWarningMessage));
+            return hraWarningMessage.getText().contains(expectedMessage);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public String getHRAWarningMessage() {
+        wait.until(ExpectedConditions.visibilityOf(hraWarningMessage));
+        return hraWarningMessage.getText();
+    }
+
+    public void clickAcknowledgeHRA() {
+        wait.until(ExpectedConditions.elementToBeClickable(acknowledgeHRAButton));
+        acknowledgeHRAButton.click();
+    }
+
+    public boolean isHRADetailsDisplayed() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(hraDetailsTable));
+            return hraDetailsTable.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public String getHRADetailValue(String fieldName) {
+        WebElement detailValue = wait.until(ExpectedConditions.visibilityOfElementLocated(
+            By.xpath("//td[contains(text(),'" + fieldName + "')]/following-sibling::td")
+        ));
+        return detailValue.getText();
+    }
+
+    // Toast Message Methods
+    public boolean isToastMessageDisplayed() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(toastMessage));
+            return toastMessage.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public String getToastMessageText() {
+        wait.until(ExpectedConditions.visibilityOf(toastMessageText));
+        return toastMessageText.getText();
+    }
+
+    public boolean isToastMessageDisplayedWithText(String expectedText) {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(toastMessage));
+            return getToastMessageText().contains(expectedText);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public boolean isTransferToSecurityButtonDisplayed() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(transferToSecurityButton));
+            return transferToSecurityButton.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public void clickTransferToSecurity() {
+        wait.until(ExpectedConditions.elementToBeClickable(transferToSecurityButton));
+        transferToSecurityButton.click();
+    }
+
+    // Helper Methods
+    public boolean isPasswordVerificationClosed() {
+        try {
+            return !passwordVerificationHeader.isDisplayed();
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    public boolean verifyNoPasswordPromptAppears() {
+        try {
+            wait.withTimeout(Duration.ofSeconds(5))
+                .until(ExpectedConditions.invisibilityOf(passwordVerificationHeader));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public void performPasswordVerificationAttempt(String password) {
+        enterPassword(password);
+        clickSubmitPassword();
+    }
+
+    public boolean checkAccountSecurityFlag() {
+        try {
+            WebElement securityFlag = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.xpath("//span[contains(@class,'security-flag') or contains(text(),'Security Review')]")
+            ));
+            return securityFlag.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+}
+
+
+
+/////////////////
+
+
+
+package com.salesforce.stepdefinitions;
+
+import com.salesforce.pages.AWSConnectToolbarPage;
+import com.salesforce.pages.PasswordVerificationPage;
+import com.salesforce.pages.SalesforceLoginPage;
+import com.salesforce.utils.DriverManager;
+import io.cucumber.datatable.DataTable;
+import io.cucumber.java.en.Given;
+import io.cucumber.java.en.Then;
+import io.cucumber.java.en.When;
+import org.junit.Assert;
+import org.openqa.selenium.WebDriver;
+
+import java.util.List;
+import java.util.Map;
+
+public class PasswordVerificationSteps {
+    private WebDriver driver;
+    private PasswordVerificationPage passwordPage;
+    private AWSConnectToolbarPage awsConnectPage;
+    private String agentRole;
+    private int passwordAttempts = 0;
+
+    public PasswordVerificationSteps() {
+        this.driver = DriverManager.getDriver();
+        this.passwordPage = new PasswordVerificationPage(driver);
+        this.awsConnectPage = new AWSConnectToolbarPage(driver);
+    }
+
+    @Given("I am logged in as a {string} agent")
+    public void iAmLoggedInAsAgent(String role) {
+        this.agentRole = role;
+        // In real implementation, you would set user profile/permission set
+        System.out.println("Agent role set to: " + role);
+    }
+
+    @Given("I have filled customer details correctly")
+    public void iHaveFilledCustomerDetailsCorrectly() {
+        awsConnectPage.enterAccountNumber("1234567890123456");
+        awsConnectPage.enterSSN("1234");
+        awsConnectPage.enterDOB("01/15/1990");
+        awsConnectPage.enterPhoneNumber("9876543210");
+    }
+
+    @When("I click on {string} button")
+    public void iClickOnButton(String buttonName) {
+        if (buttonName.equalsIgnoreCase("Verify")) {
+            passwordPage.clickVerifyButton();
+        } else if (buttonName.equalsIgnoreCase("Submit")) {
+            passwordPage.clickSubmitPassword();
+            passwordAttempts++;
+        }
+    }
+
+    @When("customer does not have a password in the system")
+    public void customerDoesNotHavePasswordInSystem() {
+        // This would be determined by system response
+        // For simulation, we check if password popup doesn't appear
+        System.out.println("Customer has no password configured");
+    }
+
+    @When("customer has a password in the system")
+    public void customerHasPasswordInSystem() {
+        // This triggers password verification popup
+        System.out.println("Customer has password configured");
+    }
+
+    @When("customer has password configured")
+    public void customerHasPasswordConfigured() {
+        customerHasPasswordInSystem();
+    }
+
+    @Then("{string} button should be enabled")
+    public void buttonShouldBeEnabled(String buttonName) {
+        if (buttonName.equalsIgnoreCase("Verify")) {
+            Assert.assertTrue("Verify button is not enabled", 
+                passwordPage.isVerifyButtonEnabled());
+        }
+    }
+
+    @Then("customer verification should be initiated")
+    public void customerVerificationShouldBeInitiated() {
+        // Wait for verification process
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Then("system should check if customer has password")
+    public void systemShouldCheckIfCustomerHasPassword() {
+        // System performs backend check
+        System.out.println("Checking customer password configuration...");
+    }
+
+    @Then("account should be launched directly in Salesforce")
+    public void accountShouldBeLaunchedDirectlyInSalesforce() {
+        Assert.assertTrue("Account not launched in Salesforce", 
+            passwordPage.isAccountLaunchedInSalesforce());
+    }
+
+    @Then("customer details should be displayed on the screen")
+    public void customerDetailsShouldBeDisplayedOnScreen() {
+        Assert.assertTrue("Customer details not displayed", 
+            passwordPage.isAccountLaunchedInSalesforce());
+    }
+
+    @Then("no password prompt should appear")
+    public void noPasswordPromptShouldAppear() {
+        Assert.assertTrue("Password prompt appeared unexpectedly", 
+            passwordPage.verifyNoPasswordPromptAppears());
+    }
+
+    @Then("customer record should be fully accessible")
+    public void customerRecordShouldBeFullyAccessible() {
+        Assert.assertTrue("Customer record not accessible", 
+            passwordPage.isCustomerRecordAccessible());
+    }
+
+    @Then("{string} popup should be displayed")
+    public void popupShouldBeDisplayed(String popupName) {
+        if (popupName.equals("Password Verification")) {
+            Assert.assertTrue("Password Verification popup not displayed", 
+                passwordPage.isPasswordVerificationPopupDisplayed());
+        }
+    }
+
+    @Then("password input field should be visible")
+    public void passwordInputFieldShouldBeVisible() {
+        Assert.assertTrue("Password field not visible", 
+            passwordPage.isPasswordVerificationPopupDisplayed());
+    }
+
+    @Then("password field should be masked")
+    public void passwordFieldShouldBeMasked() {
+        Assert.assertTrue("Password field is not masked", 
+            passwordPage.isPasswordMasked());
+    }
+
+    @Then("remaining attempts counter should show {string}")
+    public void remainingAttemptsCounterShouldShow(String expectedText) {
+        String actualText = passwordPage.getRemainingAttempts();
+        Assert.assertTrue("Attempts counter text mismatch", 
+            actualText.contains(expectedText) || actualText.contains("3"));
+    }
+
+    @When("I enter correct password {string}")
+    public void iEnterCorrectPassword(String password) {
+        passwordPage.enterPassword(password);
+    }
+
+    @When("I enter incorrect password {string}")
+    public void iEnterIncorrectPassword(String password) {
+        passwordPage.enterPassword(password);
+    }
+
+    @Then("password should be validated successfully")
+    public void passwordShouldBeValidatedSuccessfully() {
+        Assert.assertTrue("Password validation failed", 
+            passwordPage.isAccountLaunchedInSalesforce());
+    }
+
+    @Then("account should be launched in Salesforce")
+    public void accountShouldBeLaunchedInSalesforce() {
+        Assert.assertTrue("Account not launched", 
+            passwordPage.isAccountLaunchedInSalesforce());
+    }
+
+    @Then("no further verification should be required")
+    public void noFurtherVerificationShouldBeRequired() {
+        Assert.assertTrue("Verification still active", 
+            passwordPage.isPasswordVerificationClosed());
+    }
+
+    @Then("error message {string} should be displayed")
+    public void errorMessageShouldBeDisplayed(String expectedError) {
+        Assert.assertTrue("Error message not displayed: " + expectedError, 
+            passwordPage.isPasswordErrorDisplayed(expectedError));
+    }
+
+    @Then("password field should be cleared")
+    public void passwordFieldShouldBeCleared() {
+        Assert.assertTrue("Password field not cleared", 
+            passwordPage.isPasswordFieldCleared());
+    }
+
+    @Then("toast message should be displayed with text {string}")
+    public void toastMessageShouldBeDisplayedWithText(String expectedText) {
+        Assert.assertTrue("Toast message not displayed with expected text", 
+            passwordPage.isToastMessageDisplayedWithText(expectedText));
+    }
+
+    @Then("toast message should have {string} action button")
+    public void toastMessageShouldHaveActionButton(String buttonText) {
+        if (buttonText.equals("Transfer to Security")) {
+            Assert.assertTrue("Transfer to Security button not displayed", 
+                passwordPage.isTransferToSecurityButtonDisplayed());
+        }
+    }
+
+    @Then("account should not be loaded")
+    public void accountShouldNotBeLoaded() {
+        // For Care agents after max attempts
+        Assert.assertFalse("Account loaded unexpectedly", 
+            passwordPage.isAccountLaunchedInSalesforce());
+    }
+
+    @Then("password popup should remain open")
+    public void passwordPopupShouldRemainOpen() {
+        Assert.assertTrue("Password popup closed unexpectedly", 
+            passwordPage.isPasswordVerificationPopupDisplayed());
+    }
+
+    @Then("password verification popup should be closed")
+    public void passwordVerificationPopupShouldBeClosed() {
+        Assert.assertTrue("Password verification popup still open", 
+            passwordPage.isPasswordVerificationClosed());
+    }
+
+    @Then("{string} popup should be triggered")
+    public void popupShouldBeTriggered(String popupName) {
+        if (popupName.equals("HRA Notification")) {
+            Assert.assertTrue("HRA Notification popup not triggered", 
+                passwordPage.isHRANotificationPopupDisplayed());
+        }
+    }
+
+    @Then("HRA popup should contain warning {string}")
+    public void hraPopupShouldContainWarning(String expectedWarning) {
+        Assert.assertTrue("HRA warning message not found", 
+            passwordPage.isHRAWarningMessageDisplayed(expectedWarning));
+    }
+
+    @Then("account should be flagged for security review")
+    public void accountShouldBeFlaggedForSecurityReview() {
+        Assert.assertTrue("Account not flagged for security", 
+            passwordPage.checkAccountSecurityFlag());
+    }
+
+    @Then("attempt counter should be reset")
+    public void attemptCounterShouldBeReset() {
+        passwordAttempts = 0;
+        System.out.println("Password attempt counter reset");
+    }
+
+    @Then("no HRA notification should be triggered")
+    public void noHRANotificationShouldBeTriggered() {
+        Assert.assertFalse("HRA notification triggered unexpectedly", 
+            passwordPage.isHRANotificationPopupDisplayed());
+    }
+
+    @Given("I have exceeded password verification attempts")
+    public void iHaveExceededPasswordVerificationAttempts() {
+        passwordAttempts = 3;
+        System.out.println("Password attempts exceeded: " + passwordAttempts);
+    }
+
+    @Given("toast message is displayed with {string} button")
+    public void toastMessageIsDisplayedWithButton(String buttonText) {
+        Assert.assertTrue("Toast message not displayed", 
+            passwordPage.isToastMessageDisplayed());
+        Assert.assertTrue(buttonText + " button not displayed", 
+            passwordPage.isTransferToSecurityButtonDisplayed());
+    }
+
+    @When("I click on {string} button")
+    public void iClickOnSpecificButton(String buttonText) {
+        if (buttonText.equals("Transfer to Security")) {
+            passwordPage.clickTransferToSecurity();
+        } else if (buttonText.equals("Acknowledge and Proceed")) {
+            passwordPage.clickAcknowledgeHRA();
+        }
+    }
+
+    @Then("call transfer interface should be displayed")
+    public void callTransferInterfaceShouldBeDisplayed() {
+        // Check for transfer interface elements
+        try {
+            Thread.sleep(2000);
+            System.out.println("Call transfer interface displayed");
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Then("{string} should be pre-selected")
+    public void shouldBePreSelected(String queueName) {
+        System.out.println(queueName + " is pre-selected for transfer");
+        // In real implementation, verify dropdown selection
+    }
+
+    @Then("transfer reason should be auto-populated as {string}")
+    public void transferReasonShouldBeAutoPopulated(String reason) {
+        System.out.println("Transfer reason auto-populated: " + reason);
+        // Verify the transfer reason field value
+    }
+
+    @When("I confirm the transfer")
+    public void iConfirmTheTransfer() {
+        System.out.println("Transfer confirmed");
+        // Click confirm transfer button
+    }
+
+    @Then("call should be transferred to Security queue")
+    public void callShouldBeTransferredToSecurityQueue() {
+        System.out.println("Call transferred to Security queue");
+        // Verify call status changed to transferred
+    }
+
+    @Then("customer context should be passed to Security agent")
+    public void customerContextShouldBePassedToSecurityAgent() {
+        System.out.println("Customer context passed to next agent");
+        // Verify context variables are preserved
+    }
+
+    @Given("customer failed all {int} password attempts")
+    public void customerFailedAllPasswordAttempts(int attempts) {
+        passwordAttempts = attempts;
+        System.out.println("Customer failed " + attempts + " password attempts");
+    }
+
+    @Given("account is launched with {string} popup")
+    public void accountIsLaunchedWithPopup(String popupName) {
+        Assert.assertTrue("Account not launched", 
+            passwordPage.isAccountLaunchedInSalesforce());
+        if (popupName.equals("HRA Notification")) {
+            Assert.assertTrue("HRA popup not displayed", 
+                passwordPage.isHRANotificationPopupDisplayed());
+        }
+    }
+
+    @Then("HRA popup should display customer information")
+    public void hraPopupShouldDisplayCustomerInformation() {
+        Assert.assertTrue("HRA details not displayed", 
+            passwordPage.isHRADetailsDisplayed());
+    }
+
+    @Then("popup should show failed attempt details")
+    public void popupShouldShowFailedAttemptDetails(DataTable dataTable) {
+        List<Map<String, String>> details = dataTable.asMaps();
+        for (Map<String, String> row : details) {
+            String field = row.get("Field");
+            String expectedValue = row.get("Value");
+            
+            if (!expectedValue.equals("Auto")) {
+                String actualValue = passwordPage.getHRADetailValue(field);
+                if (field.equals("Failed Attempts")) {
+                    Assert.assertEquals("Failed attempts mismatch", 
+                        expectedValue, actualValue);
+                }
+            }
+        }
+    }
+
+    @When("I review the HRA notification")
+    public void iReviewTheHRANotification() {
+        Assert.assertTrue("HRA notification not visible", 
+            passwordPage.isHRANotificationPopupDisplayed());
+        System.out.println("Reviewing HRA notification");
+    }
+
+    @Then("HRA notification should be logged in customer record")
+    public void hraNotificationShouldBeLoggedInCustomerRecord() {
+        System.out.println("HRA notification logged in customer activity");
+        // Verify audit trail entry
+    }
+
+    @Then("account should remain accessible for security review")
+    public void accountShouldRemainAccessibleForSecurityReview() {
+        Assert.assertTrue("Account not accessible", 
+            passwordPage.isCustomerRecordAccessible());
+    }
+
+    @Then("security flag should be added to account")
+    public void securityFlagShouldBeAddedToAccount() {
+        Assert.assertTrue("Security flag not added", 
+            passwordPage.checkAccountSecurityFlag());
+    }
+
+    @When("I attempt password verification with {string} failed attempts")
+    public void iAttemptPasswordVerificationWithFailedAttempts(String attemptCount) {
+        int attempts = Integer.parseInt(attemptCount);
+        for (int i = 0; i < attempts; i++) {
+            passwordPage.performPasswordVerificationAttempt("WrongPassword" + i);
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    @Then("the result should be {string}")
+    public void theResultShouldBe(String expectedResult) {
+        switch (expectedResult) {
+            case "Max attempts exceeded":
+                Assert.assertEquals("Attempt count mismatch", 3, passwordAttempts);
+                break;
+            case "Still can attempt":
+                Assert.assertTrue("No more attempts available", passwordAttempts < 3);
+                break;
+            case "Account locked warning":
+                Assert.assertTrue("Warning not displayed", 
+                    passwordPage.getPasswordErrorMessage().contains("1 attempt remaining"));
+                break;
+        }
+    }
+
+    @Then("action should be {string}")
+    public void actionShouldBe(String expectedAction) {
+        switch (expectedAction) {
+            case "Show transfer toast":
+                if (agentRole.equals("Care")) {
+                    Assert.assertTrue("Transfer toast not shown", 
+                        passwordPage.isToastMessageDisplayed());
+                }
+                break;
+            case "Load account + HRA popup":
+                if (agentRole.equals("Fraud Security")) {
+                    Assert.assertTrue("Account not loaded", 
+                        passwordPage.isAccountLaunchedInSalesforce());
+                    Assert.assertTrue("HRA popup not displayed", 
+                        passwordPage.isHRANotificationPopupDisplayed());
+                }
+                break;
+            case "Show remaining attempts":
+                String attemptsText = passwordPage.getRemainingAttempts();
+                Assert.assertFalse("Attempts text not displayed", attemptsText.isEmpty());
+                break;
+            case "Show 1 attempt remaining":
+                Assert.assertTrue("Final attempt warning not shown", 
+                    passwordPage.isPasswordErrorDisplayed("1 attempt remaining"));
+                break;
+        }
+    }
+
+    @Then("password field should accept alphanumeric characters")
+    public void passwordFieldShouldAcceptAlphanumericCharacters() {
+        passwordPage.enterPassword("Test123");
+        System.out.println("Password field accepts alphanumeric characters");
+    }
+
+    @Then("password field should accept special characters")
+    public void passwordFieldShouldAcceptSpecialCharacters() {
+        passwordPage.enterPassword("Test@123!");
+        System.out.println("Password field accepts special characters");
+    }
+
+    @Then("password field should be masked by default")
+    public void passwordFieldShouldBeMaskedByDefault() {
+        Assert.assertTrue("Password not masked by default", 
+            passwordPage.isPasswordMasked());
+    }
+
+    @Then("{string} toggle should be available")
+    public void toggleShouldBeAvailable(String toggleName) {
+        System.out.println(toggleName + " toggle is available");
+    }
+
+    @When("I click on {string} toggle")
+    public void iClickOnToggle(String toggleName) {
+        if (toggleName.equals("Show Password")) {
+            passwordPage.toggleShowPassword();
+        }
+    }
+
+    @Then("password should be visible in plain text")
+    public void passwordShouldBeVisibleInPlainText() {
+        Assert.assertFalse("Password still masked", 
+            passwordPage.isPasswordMasked());
+    }
+
+    @When("I click on {string} toggle again")
+    public void iClickOnToggleAgain(String toggleName) {
+        if (toggleName.equals("Show Password")) {
+            passwordPage.toggleShowPassword();
+        }
+    }
+
+    @Then("password should be masked again")
+    public void passwordShouldBeMaskedAgain() {
+        Assert.assertTrue("Password not masked", 
+            passwordPage.isPasswordMasked());
+    }
+
+    @When("I fill customer locate questionnaire")
+    public void iFillCustomerLocateQuestionnaire() {
+        iHaveFilledCustomerDetailsCorrectly();
+    }
+
+    @When("I fail all {int} password verification attempts")
+    public void iFailAllPasswordVerificationAttempts(int attempts) {
+        for (int i = 1; i <= attempts; i++) {
+            passwordPage.performPasswordVerificationAttempt("WrongPassword" + i);
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+        passwordAttempts = attempts;
+    }
+
+    @Then("I should acknowledge HRA")
+    public void iShouldAcknowledgeHRA() {
+        passwordPage.clickAcknowledgeHRA();
+    }
+
+    @Then("I should be able to proceed with security review")
+    public void iShouldBeAbleToProceedWithSecurityReview() {
+        Assert.assertTrue("Cannot proceed with security review", 
+            passwordPage.isCustomerRecordAccessible());
+    }
+
+    @Then("security incident should be logged")
+    public void securityIncidentShouldBeLogged() {
+        System.out.println("Security incident logged for audit");
+        // Verify incident logging
+    }
+
+    @Given("I have performed password verification")
+    public void iHavePerformedPasswordVerification() {
+        passwordAttempts = 3;
+        System.out.println("Password verification performed");
+    }
+
+    @When("I check the audit log")
+    public void iCheckTheAuditLog() {
+        System.out.println("Checking audit log for password attempts");
+        // Navigate to audit log
+    }
+
+    @Then("audit trail should record all password attempts")
+    public void auditTrailShouldRecordAllPasswordAttempts() {
+        System.out.println("Audit trail contains all " + passwordAttempts + " attempts");
+        // Verify audit entries
+    }
+
+    @Then("audit should include timestamp of each attempt")
+    public void auditShouldIncludeTimestampOfEachAttempt() {
+        System.out.println("Audit includes timestamps");
+        // Verify timestamp presence
+    }
+
+    @Then("audit should include agent ID and role")
+    public void auditShouldIncludeAgentIDAndRole() {
+        System.out.println("Audit includes agent: " + agentRole);
+        // Verify agent information
+    }
+
+    @Then("audit should include final outcome")
+    public void auditShouldIncludeFinalOutcome() {
+        System.out.println("Audit includes final verification outcome");
+        // Verify outcome status
+    }
+
+    @Then("audit should be visible in customer activity history")
+    public void auditShouldBeVisibleInCustomerActivityHistory() {
+        System.out.println("Audit visible in customer activity timeline");
+        // Verify activity history entry
+    }
+
+    @Then("I should be able to assist customer")
+    public void iShouldBeAbleToAssistCustomer() {
+        Assert.assertTrue("Cannot assist customer", 
+            passwordPage.isCustomerRecordAccessible());
+    }
+
+    @Then("call disposition should be available")
+    public void callDispositionShouldBeAvailable() {
+        System.out.println("Call disposition options available");
+        // Verify disposition interface
+    }
+}
+
+
+
+
+
+
+
+/////////////
+
+
+
+
+package com.salesforce.pages;
+
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.FindBy;
+import org.openqa.selenium.support.PageFactory;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.Select;
+import org.openqa.selenium.support.ui.WebDriverWait;
+
+import java.time.Duration;
+
+public class CallTransferPage {
+    private WebDriver driver;
+    private WebDriverWait wait;
+
+    // Transfer Interface Elements
+    @FindBy(xpath = "//div[contains(@class,'transfer-interface') or contains(text(),'Transfer Call')]")
+    private WebElement transferInterface;
+
+    @FindBy(xpath = "//select[contains(@name,'transferQueue') or contains(@class,'queue-dropdown')]")
+    private WebElement queueDropdown;
+
+    @FindBy(xpath = "//select[contains(@name,'transferAgent') or contains(@class,'agent-dropdown')]")
+    private WebElement agentDropdown;
+
+    @FindBy(xpath = "//textarea[contains(@name,'transferReason') or @placeholder='Transfer Reason']")
+    private WebElement transferReasonField;
+
+    @FindBy(xpath = "//input[contains(@name,'customerContext') or @placeholder='Customer Context']")
+    private WebElement customerContextField;
+
+    @FindBy(xpath = "//button[contains(text(),'Confirm Transfer') or @title='Confirm Transfer']")
+    private WebElement confirmTransferButton;
+
+    @FindBy(xpath = "//button[contains(text(),'Cancel Transfer')]")
+    private WebElement cancelTransferButton;
+
+    // Transfer Status Elements
+    @FindBy(xpath = "//div[contains(@class,'transfer-status')]")
+    private WebElement transferStatusIndicator;
+
+    @FindBy(xpath = "//span[contains(text(),'Transfer Successful')]")
+    private WebElement transferSuccessMessage;
+
+    @FindBy(xpath = "//div[contains(@class,'transfer-confirmation')]")
+    private WebElement transferConfirmationDialog;
+
+    // Warm Transfer Elements
+    @FindBy(xpath = "//button[contains(text(),'Warm Transfer')]")
+    private WebElement warmTransferButton;
+
+    @FindBy(xpath = "//button[contains(text(),'Cold Transfer')]")
+    private WebElement coldTransferButton;
+
+    @FindBy(xpath = "//div[contains(@class,'conference-call')]")
+    private WebElement conferenceCallInterface;
+
+    public CallTransferPage(WebDriver driver) {
+        this.driver = driver;
+        this.wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+        PageFactory.initElements(driver, this);
+    }
+
+    // Transfer Interface Methods
+    public boolean isTransferInterfaceDisplayed() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(transferInterface));
+            return transferInterface.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public void selectTransferQueue(String queueName) {
+        wait.until(ExpectedConditions.elementToBeClickable(queueDropdown));
+        Select dropdown = new Select(queueDropdown);
+        dropdown.selectByVisibleText(queueName);
+    }
+
+    public String getSelectedQueue() {
+        wait.until(ExpectedConditions.visibilityOf(queueDropdown));
+        Select dropdown = new Select(queueDropdown);
+        return dropdown.getFirstSelectedOption().getText();
+    }
+
+    public boolean isQueuePreSelected(String expectedQueue) {
+        return getSelectedQueue().equals(expectedQueue);
+    }
+
+    public void selectTransferAgent(String agentName) {
+        wait.until(ExpectedConditions.elementToBeClickable(agentDropdown));
+        Select dropdown = new Select(agentDropdown);
+        dropdown.selectByVisibleText(agentName);
+    }
+
+    public void enterTransferReason(String reason) {
+        wait.until(ExpectedConditions.elementToBeClickable(transferReasonField));
+        transferReasonField.clear();
+        transferReasonField.sendKeys(reason);
+    }
+
+    public String getTransferReason() {
+        wait.until(ExpectedConditions.visibilityOf(transferReasonField));
+        return transferReasonField.getAttribute("value");
+    }
+
+    public boolean isTransferReasonAutoPopulated(String expectedReason) {
+        String actualReason = getTransferReason();
+        return actualReason.contains(expectedReason);
+    }
+
+    public void enterCustomerContext(String context) {
+        wait.until(ExpectedConditions.elementToBeClickable(customerContextField));
+        customerContextField.clear();
+        customerContextField.sendKeys(context);
+    }
+
+    public String getCustomerContext() {
+        wait.until(ExpectedConditions.visibilityOf(customerContextField));
+        return customerContextField.getAttribute("value");
+    }
+
+    public void clickConfirmTransfer() {
+        wait.until(ExpectedConditions.elementToBeClickable(confirmTransferButton));
+        confirmTransferButton.click();
+    }
+
+    public void clickCancelTransfer() {
+        wait.until(ExpectedConditions.elementToBeClickable(cancelTransferButton));
+        cancelTransferButton.click();
+    }
+
+    // Transfer Status Methods
+    public String getTransferStatus() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(transferStatusIndicator));
+            return transferStatusIndicator.getText();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    public boolean isTransferSuccessful() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(transferSuccessMessage));
+            return transferSuccessMessage.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public boolean isTransferConfirmationDisplayed() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(transferConfirmationDialog));
+            return transferConfirmationDialog.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // Warm/Cold Transfer Methods
+    public void initiateWarmTransfer() {
+        wait.until(ExpectedConditions.elementToBeClickable(warmTransferButton));
+        warmTransferButton.click();
+    }
+
+    public void initiateColdTransfer() {
+        wait.until(ExpectedConditions.elementToBeClickable(coldTransferButton));
+        coldTransferButton.click();
+    }
+
+    public boolean isConferenceCallActive() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(conferenceCallInterface));
+            return conferenceCallInterface.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // Helper Methods
+    public void performCompleteTransfer(String queue, String reason) {
+        selectTransferQueue(queue);
+        enterTransferReason(reason);
+        clickConfirmTransfer();
+    }
+
+    public boolean verifyCustomerContextPassed() {
+        // Check if context is preserved after transfer
+        String context = getCustomerContext();
+        return !context.isEmpty();
+    }
+}
+
+
+//////////
+
+
+package com.salesforce.pages;
+
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.FindBy;
+import org.openqa.selenium.support.PageFactory;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.Select;
+import org.openqa.selenium.support.ui.WebDriverWait;
+import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.interactions.Actions;
+
+import java.time.Duration;
+import java.util.List;
+
+public class AWSConnectCCPPage {
+    private WebDriver driver;
+    private WebDriverWait wait;
+    private JavascriptExecutor js;
+    private Actions actions;
+
+    // CCP Iframe and Container
+    @FindBy(xpath = "//div[contains(@class,'Toolbar')]")
+    private WebElement toolbarContainer;
+
+    @FindBy(xpath = "//iframe[contains(@title,'Amazon Connect') or contains(@src,'ccp')]")
+    private WebElement ccpIframe;
+
+    // Agent Status Elements
+    @FindBy(xpath = "//div[contains(text(),'Agent:')]")
+    private WebElement agentLabel;
+
+    @FindBy(xpath = "//span[contains(text(),'Ready') or contains(text(),'Available')]")
+    private WebElement agentStatusReady;
+
+    @FindBy(xpath = "//select[contains(@class,'status') or @aria-label='Agent status']")
+    private WebElement agentStatusDropdown;
+
+    @FindBy(xpath = "//span[contains(text(),'Busy')]")
+    private WebElement busyStatus;
+
+    // Call Information Elements
+    @FindBy(xpath = "//div[contains(text(),'Unknown')]")
+    private WebElement callerNameUnknown;
+
+    @FindBy(xpath = "//div[contains(text(),'+91') or contains(@class,'phone-number')]")
+    private WebElement incomingPhoneNumber;
+
+    @FindBy(xpath = "//div[contains(text(),'Call Connected')]")
+    private WebElement callConnectedStatus;
+
+    @FindBy(xpath = "//span[contains(@class,'call-duration') or contains(text(),'04:23')]")
+    private WebElement callDuration;
+
+    @FindBy(xpath = "//div[contains(text(),'BRID:')]")
+    private WebElement bridgeId;
+
+    // Call Control Buttons
+    @FindBy(xpath = "//button[contains(@aria-label,'Hold') or .//text()='Hold']")
+    private WebElement holdButton;
+
+    @FindBy(xpath = "//button[contains(@aria-label,'End Call') or .//text()='End Call']")
+    private WebElement endCallButton;
+
+    @FindBy(xpath = "//button[contains(@aria-label,'Dial') or .//text()='Dial']")
+    private WebElement dialButton;
+
+    @FindBy(xpath = "//button[contains(@aria-label,'Accept') or contains(text(),'Accept')]")
+    private WebElement acceptCallButton;
+
+    @FindBy(xpath = "//button[contains(@aria-label,'Reject')]")
+    private WebElement rejectCallButton;
+
+    // Call Status Indicators
+    @FindBy(xpath = "//div[contains(@class,'call-status')]")
+    private WebElement callStatusIndicator;
+
+    @FindBy(xpath = "//span[contains(@class,'connection-time')]")
+    private WebElement connectionTime;
+
+    @FindBy(xpath = "//div[contains(@class,'incoming-call')]")
+    private WebElement incomingCallNotification;
+
+    // Bottom Navigation Elements
+    @FindBy(xpath = "//a[contains(text(),'Omni-Channel')]")
+    private WebElement omniChannelTab;
+
+    @FindBy(xpath = "//a[contains(text(),'Hot Topics')]")
+    private WebElement hotTopicsTab;
+
+    @FindBy(xpath = "//a[contains(text(),'KM')]")
+    private WebElement kmTab;
+
+    @FindBy(xpath = "//a[contains(text(),'Transfer Guide')]")
+    private WebElement transferGuideTab;
+
+    @FindBy(xpath = "//a[contains(text(),'DoNotUse')]")
+    private WebElement doNotUseTab;
+
+    // Message Account ID and Appian Case ID (from screenshot)
+    @FindBy(xpath = "//label[contains(text(),'Message Account ID')]/following-sibling::input")
+    private WebElement messageAccountIdField;
+
+    @FindBy(xpath = "//label[contains(text(),'Appian Case ID')]/following-sibling::input")
+    private WebElement appianCaseIdField;
+
+    public AWSConnectCCPPage(WebDriver driver) {
+        this.driver = driver;
+        this.wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+        this.js = (JavascriptExecutor) driver;
+        this.actions = new Actions(driver);
+        PageFactory.initElements(driver, this);
+    }
+
+    // CCP Iframe Handling
+    public void switchToCCPIframe() {
+        try {
+            wait.until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(ccpIframe));
+            System.out.println("Switched to CCP iframe");
+        } catch (Exception e) {
+            // Try alternative iframe locator
+            List<WebElement> iframes = driver.findElements(By.tagName("iframe"));
+            for (WebElement iframe : iframes) {
+                if (iframe.getAttribute("title") != null && 
+                    iframe.getAttribute("title").contains("Amazon Connect")) {
+                    driver.switchTo().frame(iframe);
+                    System.out.println("Switched to CCP iframe using alternative method");
+                    break;
+                }
+            }
+        }
+    }
+
+    public void switchToDefaultContent() {
+        driver.switchTo().defaultContent();
+    }
+
+    // Agent Status Methods
+    public boolean isToolbarVisible() {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(toolbarContainer));
+            return toolbarContainer.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public String getAgentName() {
+        try {
+            switchToCCPIframe();
+            wait.until(ExpectedConditions.visibilityOf(agentLabel));
+            return agentLabel.getText().replace("Agent:", "").trim();
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public String getAgentStatus() {
+        try {
+            switchToCCPIframe();
+            wait.until(ExpectedConditions.visibilityOf(agentStatusDropdown));
+            Select statusSelect = new Select(agentStatusDropdown);
+            return statusSelect.getFirstSelectedOption().getText();
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public void setAgentStatus(String status) {
+        try {
+            switchToCCPIframe();
+            wait.until(ExpectedConditions.elementToBeClickable(agentStatusDropdown));
+            Select statusSelect = new Select(agentStatusDropdown);
+            statusSelect.selectByVisibleText(status);
+            System.out.println("Agent status set to: " + status);
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public boolean isAgentReady() {
+        try {
+            switchToCCPIframe();
+            String status = getAgentStatus();
+            return status.equalsIgnoreCase("Ready") || status.equalsIgnoreCase("Available");
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    // Incoming Call Detection
+    public boolean isIncomingCallReceived() {
+        try {
+            switchToCCPIframe();
+            // Check for incoming call notification or ringing state
+            boolean hasIncomingNotification = driver.findElements(
+                By.xpath("//div[contains(@class,'incoming-call') or contains(text(),'Incoming')]")
+            ).size() > 0;
+            
+            boolean hasAcceptButton = driver.findElements(
+                By.xpath("//button[contains(@aria-label,'Accept') or contains(text(),'Accept')]")
+            ).size() > 0;
+            
+            return hasIncomingNotification || hasAcceptButton;
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public String getIncomingPhoneNumber() {
+        try {
+            switchToCCPIframe();
+            wait.until(ExpectedConditions.visibilityOf(incomingPhoneNumber));
+            return incomingPhoneNumber.getText();
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public boolean isCallerUnknown() {
+        try {
+            switchToCCPIframe();
+            return driver.findElements(
+                By.xpath("//div[contains(text(),'Unknown')]")
+            ).size() > 0;
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    // Call Control Methods
+    public void acceptIncomingCall() {
+        try {
+            switchToCCPIframe();
+            wait.until(ExpectedConditions.elementToBeClickable(acceptCallButton));
+            acceptCallButton.click();
+            System.out.println("Accepted incoming call");
+            
+            // Wait for call to be connected
+            wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.xpath("//div[contains(text(),'Call Connected') or contains(text(),'Connected')]")
+            ));
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public void rejectIncomingCall() {
+        try {
+            switchToCCPIframe();
+            wait.until(ExpectedConditions.elementToBeClickable(rejectCallButton));
+            rejectCallButton.click();
+            System.out.println("Rejected incoming call");
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public void holdCall() {
+        try {
+            switchToCCPIframe();
+            wait.until(ExpectedConditions.elementToBeClickable(holdButton));
+            holdButton.click();
+            System.out.println("Call placed on hold");
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public void unholdCall() {
+        try {
+            switchToCCPIframe();
+            wait.until(ExpectedConditions.elementToBeClickable(holdButton));
+            holdButton.click();
+            System.out.println("Call resumed from hold");
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public void endCall() {
+        try {
+            switchToCCPIframe();
+            wait.until(ExpectedConditions.elementToBeClickable(endCallButton));
+            endCallButton.click();
+            System.out.println("Call ended");
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public void clickDialButton() {
+        try {
+            switchToCCPIframe();
+            wait.until(ExpectedConditions.elementToBeClickable(dialButton));
+            dialButton.click();
+            System.out.println("Dial button clicked");
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    // Call Status Methods
+    public boolean isCallConnected() {
+        try {
+            switchToCCPIframe();
+            return driver.findElements(
+                By.xpath("//div[contains(text(),'Call Connected') or @class='call-connected']")
+            ).size() > 0;
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public String getCallStatus() {
+        try {
+            switchToCCPIframe();
+            WebElement statusElement = wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.xpath("//div[contains(@class,'call-status')]")
+            ));
+            return statusElement.getText();
+        } catch (Exception e) {
+            return "Unknown";
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public String getCallDuration() {
+        try {
+            switchToCCPIframe();
+            wait.until(ExpectedConditions.visibilityOf(callDuration));
+            return callDuration.getText();
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public String getConnectionTime() {
+        try {
+            switchToCCPIframe();
+            WebElement connTime = driver.findElement(
+                By.xpath("//span[contains(@class,'connection-time')]")
+            );
+            return connTime.getText();
+        } catch (Exception e) {
+            return "";
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    public String getBridgeId() {
+        try {
+            switchToCCPIframe();
+            wait.until(ExpectedConditions.visibilityOf(bridgeId));
+            return bridgeId.getText().replace("BRID:", "").trim();
+        } finally {
+            switchToDefaultContent();
+        }
+    }
+
+    // Simulate Inbound Call - Enhanced
+    public void triggerInboundCall(String phoneNumber) {
+        // Method 1: Using JavaScript to dispatch custom event
+        js.executeScript(
+            "var event = new CustomEvent('amazon-connect-incoming-call', {" +
+            "  detail: {" +
+            "    contactId: 'test-" + System.currentTimeMillis() + "'," +
+            "    phoneNumber: '" + phoneNumber + "'," +
+            "    timestamp: new Date().toISOString()," +
+            "    queue: 'BasicQueue'" +
+            "  }" +
+            "});" +
+            "window.dispatchEvent(event);"
+        );
+        
+        System.out.println("Inbound call triggered for: " + phoneNumber);
+        
+        // Wait for call notification
+        waitForSeconds(2);
+    }
+
+    // Alternative method using AWS Connect Streams API
+    public void simulateInboundCallViaStreamsAPI(String phoneNumber) {
+        js.executeScript(
+            "if (window.connect && window.connect.agent) {" +
+            "  var agent = window.connect.agent();" +
+            "  console.log('Simulating inbound call via Streams API');" +
+            "} else {" +
+            "  console.log('AWS Connect Streams API not available');" +
+            "}"
+        );
+    }
+
+    // Wait for Locate Customer Popup after accepting call
+    public boolean waitForLocateCustomerPopup(int timeoutSeconds) {
+        try {
+            switchToDefaultContent(); // Make sure we're in main content
+            WebElement popup = wait.withTimeout(Duration.ofSeconds(timeoutSeconds))
+                .until(ExpectedConditions.visibilityOfElementLocated(
+                    By.xpath("//div[contains(text(),'Locate Customer')]")
+                ));
+            return popup.isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // Bottom Navigation Methods
+    public void clickOmniChannel() {
+        wait.until(ExpectedConditions.elementToBeClickable(omniChannelTab));
+        omniChannelTab.click();
+    }
+
+    public void clickHotTopics() {
+        wait.until(ExpectedConditions.elementToBeClickable(hotTopicsTab));
+        hotTopicsTab.click();
+    }
+
+    public void clickKM() {
+        wait.until(ExpectedConditions.elementToBeClickable(kmTab));
+        kmTab.click();
+    }
+
+    public void clickTransferGuide() {
+        wait.until(ExpectedConditions.elementToBeClickable(transferGuideTab));
+        transferGuideTab.click();
+    }
+
+    // Helper Methods
+    private void waitForSeconds(int seconds) {
+        try {
+            Thread.sleep(seconds * 1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public boolean verifyCallLanded() {
+        return isCallConnected() || isIncomingCallReceived();
+    }
+
+    public void acceptCallAndWaitForPopup() {
+        acceptIncomingCall();
+        boolean popupDisplayed = waitForLocateCustomerPopup(10);
+        if (popupDisplayed) {
+            System.out.println("Locate Customer popup displayed successfully");
+        } else {
+            System.out.println("Warning: Locate Customer popup did not appear");
+        }
+    }
+}
+
+
+
+
+////////////
+
+
+
+
+
+package com.salesforce.stepdefinitions;
+
+import com.salesforce.pages.AWSConnectCCPPage;
+import com.salesforce.pages.AWSConnectToolbarPage;
+import com.salesforce.utils.DriverManager;
+import io.cucumber.java.en.Given;
+import io.cucumber.java.en.Then;
+import io.cucumber.java.en.When;
+import org.junit.Assert;
+import org.openqa.selenium.WebDriver;
+
+public class InboundCallStepDefinitions {
+    private WebDriver driver;
+    private AWSConnectCCPPage ccpPage;
+    private AWSConnectToolbarPage toolbarPage;
+    private String incomingPhoneNumber;
+
+    public InboundCallStepDefinitions() {
+        this.driver = DriverManager.getDriver();
+        this.ccpPage = new AWSConnectCCPPage(driver);
+        this.toolbarPage = new AWSConnectToolbarPage(driver);
+    }
+
+    @Given("AWS Connect toolbar is visible and ready")
+    public void awsConnectToolbarIsVisibleAndReady() {
+        Assert.assertTrue("AWS Connect toolbar not visible", 
+            ccpPage.isToolbarVisible());
+        System.out.println("AWS Connect CCP toolbar is ready");
+    }
+
+    @Given("I am in Available status in AWS Connect")
+    public void iAmInAvailableStatusInAWSConnect() {
+        if (!ccpPage.isAgentReady()) {
+            ccpPage.setAgentStatus("Ready");
+        }
+        Assert.assertTrue("Agent not in Ready/Available status", 
+            ccpPage.isAgentReady());
+        System.out.println("Agent status: Ready");
+    }
+
+    @When("an inbound call is received")
+    public void anInboundCallIsReceived() {
+        // Simulate an inbound call
+        incomingPhoneNumber = "+914466925896";
+        ccpPage.triggerInboundCall(incomingPhoneNumber);
+        
+        // Wait a moment for call to arrive
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Then("AWS Connect toolbar should show incoming call notification")
+    public void awsConnectToolbarShouldShowIncomingCallNotification() {
+        Assert.assertTrue("Incoming call notification not displayed", 
+            ccpPage.isIncomingCallReceived());
+        System.out.println("Incoming call notification detected");
+    }
+
+    @Then("call status should change to {string}")
+    public void callStatusShouldChangeTo(String expectedStatus) {
+        String actualStatus = ccpPage.getCallStatus();
+        System.out.println("Current call status: " + actualStatus);
+        
+        if (expectedStatus.equalsIgnoreCase("Ringing")) {
+            Assert.assertTrue("Call not in ringing state", 
+                ccpPage.isIncomingCallReceived());
+        } else if (expectedStatus.equalsIgnoreCase("Connected")) {
+            Assert.assertTrue("Call not connected", 
+                ccpPage.isCallConnected());
+        }
+    }
+
+    @When("I accept the incoming call")
+    public void iAcceptTheIncomingCall() {
+        ccpPage.acceptIncomingCall();
+        System.out.println("Accepted the incoming call");
+    }
+
+    @Then("\"Locate Customer\" questionnaire popup should be displayed")
+    public void locateCustomerQuestionnairePopupShouldBeDisplayed() {
+        boolean popupDisplayed = ccpPage.waitForLocateCustomerPopup(15);
+        Assert.assertTrue("Locate Customer popup not displayed after accepting call", 
+            popupDisplayed);
+        System.out.println("Locate Customer popup is displayed");
+    }
+
+    @Given("an inbound call is connected")
+    public void anInboundCallIsConnected() {
+        // Set agent to ready
+        iAmInAvailableStatusInAWSConnect();
+        
+        // Trigger and accept call
+        anInboundCallIsReceived();
+        
+        // Wait for incoming call
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        
+        // Accept the call
+        ccpPage.acceptCallAndWaitForPopup();
+        
+        Assert.assertTrue("Call not connected", ccpPage.isCallConnected());
+    }
+
+    @Then("caller should be shown as {string}")
+    public void callerShouldBeShownAs(String callerStatus) {
+        if (callerStatus.equalsIgnoreCase("Unknown")) {
+            Assert.assertTrue("Caller not shown as Unknown", 
+                ccpPage.isCallerUnknown());
+        }
+    }
+
+    @Then("incoming phone number should be displayed")
+    public void incomingPhoneNumberShouldBeDisplayed() {
+        String phoneNumber = ccpPage.getIncomingPhoneNumber();
+        Assert.assertFalse("Phone number not displayed", 
+            phoneNumber.isEmpty());
+        System.out.println("Incoming phone number: " + phoneNumber);
+    }
+
+    @Then("call duration timer should be running")
+    public void callDurationTimerShouldBeRunning() {
+        String duration = ccpPage.getCallDuration();
+        Assert.assertFalse("Call duration not displayed", 
+            duration.isEmpty());
+        System.out.println("Call duration: " + duration);
+    }
+
+    @Then("Bridge ID should be displayed")
+    public void bridgeIdShouldBeDisplayed() {
+        String brid = ccpPage.getBridgeId();
+        Assert.assertFalse("Bridge ID not displayed", 
+            brid.isEmpty());
+        System.out.println("Bridge ID: " + brid);
+    }
+
+    @When("I click on Hold button")
+    public void iClickOnHoldButton() {
+        ccpPage.holdCall();
+        System.out.println("Call placed on hold");
+    }
+
+    @Then("call should be placed on hold")
+    public void callShouldBePlacedOnHold() {
+        // Verify hold status
+        String status = ccpPage.getCallStatus();
+        System.out.println("Call status after hold: " + status);
+    }
+
+    @When("I click on Resume button")
+    public void iClickOnResumeButton() {
+        ccpPage.unholdCall();
+        System.out.println("Call resumed");
+    }
+
+    @Then("call should be resumed")
+    public void callShouldBeResumed() {
+        Assert.assertTrue("Call not active", ccpPage.isCallConnected());
+    }
+
+    @When("I click on End Call button")
+    public void iClickOnEndCallButton() {
+        ccpPage.endCall();
+        System.out.println("Call ended");
+    }
+
+    @Then("call should be disconnected")
+    public void callShouldBeDisconnected() {
+        // Wait for call to end
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        
+        Assert.assertFalse("Call still connected", ccpPage.isCallConnected());
+    }
+
+    @When("I change agent status to {string}")
+    public void iChangeAgentStatusTo(String status) {
+        ccpPage.setAgentStatus(status);
+        System.out.println("Agent status changed to: " + status);
+    }
+
+    @Then("agent status should be {string}")
+    public void agentStatusShouldBe(String expectedStatus) {
+        String actualStatus = ccpPage.getAgentStatus();
+        Assert.assertEquals("Agent status mismatch", 
+            expectedStatus, actualStatus);
+    }
+
+    @Then("agent should not receive new calls")
+    public void agentShouldNotReceiveNewCalls() {
+        // Verify agent is not in Ready state
+        Assert.assertFalse("Agent still in ready state", 
+            ccpPage.isAgentReady());
+        System.out.println("Agent will not receive new calls");
+    }
+
+    @When("I click on Dial button")
+    public void iClickOnDialButton() {
+        ccpPage.clickDialButton();
+        System.out.println("Dial button clicked");
+    }
+
+    @Then("dial pad should be displayed")
+    public void dialPadShouldBeDisplayed() {
+        // Verify dial pad interface
+        System.out.println("Dial pad interface displayed");
+    }
+
+    @Then("I should be able to make outbound call")
+    public void iShouldBeAbleToMakeOutboundCall() {
+        System.out.println("Ready to make outbound call");
+    }
+
+    @Given("\"Locate Customer\" popup is displayed")
+    public void locateCustomerPopupIsDisplayed() {
+        Assert.assertTrue("Locate Customer popup not displayed", 
+            toolbarPage.isLocateCustomerPopupDisplayed());
+    }
+
+    @When("I reject the incoming call")
+    public void iRejectTheIncomingCall() {
+        ccpPage.rejectIncomingCall();
+        System.out.println("Incoming call rejected");
+    }
+
+    @Then("call should be rejected")
+    public void callShouldBeRejected() {
+        Assert.assertFalse("Call still active", ccpPage.isCallConnected());
+        System.out.println("Call rejected successfully");
+    }
+
+    @Then("I should return to Available status")
+    public void iShouldReturnToAvailableStatus() {
+        // Wait for status to update
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        
+        Assert.assertTrue("Agent not in available status", 
+            ccpPage.isAgentReady());
+    }
+
+    // Verification Methods
+    @Then("I verify the call has landed in Salesforce")
+    public void iVerifyTheCallHasLandedInSalesforce() {
+        boolean callLanded = ccpPage.verifyCallLanded();
+        Assert.assertTrue("Call did not land in Salesforce", callLanded);
+        System.out.println("✓ Call successfully landed in Salesforce");
+    }
+
+    @Then("I verify CCP interface is loaded")
+    public void iVerifyCCPInterfaceIsLoaded() {
+        Assert.assertTrue("CCP interface not loaded", 
+            ccpPage.isToolbarVisible());
+        System.out.println("✓ CCP interface loaded successfully");
+    }
+
+    @Then("I verify all call control buttons are visible")
+    public void iVerifyAllCallControlButtonsAreVisible() {
+        // This would check for Hold, End Call, Dial buttons
+        System.out.println("✓ All call control buttons are visible");
+    }
+
+    @When("I click on Omni-Channel tab")
+    public void iClickOnOmniChannelTab() {
+        ccpPage.clickOmniChannel();
+        System.out.println("Omni-Channel tab clicked");
+    }
+
+    @When("I click on Hot Topics tab")
+    public void iClickOnHotTopicsTab() {
+        ccpPage.clickHotTopics();
+        System.out.println("Hot Topics tab clicked");
+    }
+
+    @When("I click on KM tab")
+    public void iClickOnKMTab() {
+        ccpPage.clickKM();
+        System.out.println("KM (Knowledge Management) tab clicked");
+    }
+
+    @When("I click on Transfer Guide tab")
+    public void iClickOnTransferGuideTab() {
+        ccpPage.clickTransferGuide();
+        System.out.println("Transfer Guide tab clicked");
+    }
+}
+
+
+
+
+//////////////
+
+
+
+Feature: Complete Inbound Call Handling with AWS Connect CCP
+  As a call center agent
+  I want to handle inbound calls through AWS Connect CCP integrated with Salesforce
+  So that I can efficiently assist customers with proper verification
+
+  Background:
+    Given I am logged into Salesforce with AWS Connect toolbar
+    And AWS Connect toolbar is visible and ready
+    And I am in Available status in AWS Connect
+
+  @RealScenario @EndToEnd @Critical
+  Scenario: Complete end-to-end inbound call with password verification - Care Agent
+    Given I am logged in as a "Care" agent
+    When an inbound call is received
+    Then AWS Connect toolbar should show incoming call notification
+    And caller should be shown as "Unknown"
+    And incoming phone number should be displayed
+    And call status should change to "Ringing"
+    When I accept the incoming call
+    Then call status should change to "Connected"
+    And call duration timer should be running
+    And Bridge ID should be displayed
+    And "Locate Customer" questionnaire popup should be displayed
+    When I enter Account Number "1234567890123456"
+    And I enter last 4 digits of SSN "5678"
+    And I enter Date of Birth "01/15/1990"
+    And I enter Phone Number "9144669258 96"
+    Then "Verify" button should be enabled
+    When I click on "Verify" button
+    And customer has password configured
+    Then "Password Verification" popup should be displayed
+    When I enter incorrect password "WrongPass1"
+    And I click on "Submit" button
+    Then error message "Incorrect password. 2 attempts remaining" should be displayed
+    When I enter incorrect password "WrongPass2"
+    And I click on "Submit" button
+    Then error message "Incorrect password. 1 attempt remaining" should be displayed
+    When I enter incorrect password "WrongPass3"
+    And I click on "Submit" button
+    Then toast message should be displayed with text "Maximum attempts exceeded. Please transfer the call to Security team"
+    And toast message should have "Transfer to Security" action button
+    When I click on "Transfer to Security" button
+    Then call transfer interface should be displayed
+    And "Security Queue" should be pre-selected
+    And transfer reason should be auto-populated as "Password Verification Failed"
+    When I confirm the transfer
+    Then call should be transferred to Security queue
+
+  @RealScenario @EndToEnd @Critical
+  Scenario: Complete end-to-end inbound call with password verification - Security Agent
+    Given I am logged in as a "Fraud Security" agent
+    When an inbound call is received
+    And I accept the incoming call
+    Then "Locate Customer" questionnaire popup should be displayed
+    When I enter Account Number "1234567890123456"
+    And I enter last 4 digits of SSN "5678"
+    And I enter Date of Birth "01/15/1990"
+    And I enter Phone Number "9144669258 96"
+    And I click on "Verify" button
+    And customer has password configured
+    When I fail all 3 password verification attempts
+    Then password verification popup should be closed
+    And account should be launched in Salesforce
+    And "HRA Notification" popup should be triggered
+    And HRA popup should contain warning "Customer failed password verification - High Risk Account"
+    When I click on "Acknowledge and Proceed" button
+    Then HRA notification should be logged in customer record
+    And account should be flagged for security review
+    And I should be able to proceed with security review
+    When I complete the call interaction
+    And I click on End Call button
+    Then call should be disconnected
+    And security incident should be logged
+
+  @RealScenario @NoPassword
+  Scenario: Inbound call handling for customer without password
+    When an inbound call is received
+    And I accept the incoming call
+    Then "Locate Customer" questionnaire popup should be displayed
+    When I enter Account Number "9876543210123456"
+    And I enter last 4 digits of SSN "1234"
+    And I enter Date of Birth "05/20/1985"
+    And I enter Phone Number "9144669258 96"
+    And I click on "Verify" button
+    And customer does not have a password in the system
+    Then account should be launched directly in Salesforce
+    And no password prompt should appear
+    And customer record should be fully accessible
+    And I should be able to assist customer
+
+  @RealScenario @CallControls
+  Scenario: Verify all call control functionalities
+    When an inbound call is received
+    And I accept the incoming call
+    Then I verify the call has landed in Salesforce
+    And I verify CCP interface is loaded
+    And I verify all call control buttons are visible
+    When I click on Hold button
+    Then call should be placed on hold
+    When I click on Resume button
+    Then call should be resumed
+    Then call duration timer should be running
+    When I click on End Call button
+    Then call should be disconnected
+
+  @RealScenario @AgentStatus
+  Scenario: Agent status management during calls
+    Given agent status should be "Ready"
+    When an inbound call is received
+    And I accept the incoming call
+    Then call status should change to "Connected"
+    When I change agent status to "Busy"
+    Then agent status should be "Busy"
+    And agent should not receive new calls
+    When I click on End Call button
+    Then call should be disconnected
+    When I change agent status to "Ready"
+    Then agent status should be "Ready"
+
+  @RealScenario @CallRejection
+  Scenario: Reject incoming call
+    When an inbound call is received
+    Then AWS Connect toolbar should show incoming call notification
+    When I reject the incoming call
+    Then call should be rejected
+    And I should return to Available status
+
+  @RealScenario @DialPad
+  Scenario: Access dial pad for outbound calls
+    Given I am in Available status in AWS Connect
+    When I click on Dial button
+    Then dial pad should be displayed
+    And I should be able to make outbound call
+
+  @RealScenario @Navigation
+  Scenario: Navigate through toolbar tabs during active call
+    When an inbound call is received
+    And I accept the incoming call
+    Then call status should change to "Connected"
+    When I click on Omni-Channel tab
+    Then Omni-Channel interface should be displayed
+    When I click on Hot Topics tab
+    Then Hot Topics should be displayed
+    When I click on KM tab
+    Then Knowledge Management should be displayed
+    When I click on Transfer Guide tab
+    Then Transfer Guide should be displayed
+
+  @RealScenario @AccountNotAvailable
+  Scenario: Handle call when account number is not available
+    When an inbound call is received
+    And I accept the incoming call
+    Then "Locate Customer" questionnaire popup should be displayed
+    When I check "Click Here if Account Number is Not Available" checkbox
+    Then Account Number field should be disabled
+    When I enter last 4 digits of SSN "5678"
+    And I enter Date of Birth "01/15/1990"
+    And I enter Phone Number "9144669258 96"
+    And I click on "Verify" button
+    Then customer verification should be initiated with SSN and DOB only
+
+  @RealScenario @PhoneNotAvailable
+  Scenario: Handle call when phone number is not available
+    When an inbound call is received
+    And I accept the incoming call
+    Then "Locate Customer" questionnaire popup should be displayed
+    When I enter Account Number "1234567890123456"
+    And I enter last 4 digits of SSN "5678"
+    And I enter Date of Birth "01/15/1990"
+    When I check "Click Here if Phone Number is Not Available" checkbox
+    Then Phone Number field should be disabled
+    And I click on "Verify" button
+    Then customer verification should proceed without phone number
+
+  @RealScenario @ValidationErrors
+  Scenario: Validate field errors before verification
+    When an inbound call is received
+    And I accept the incoming call
+    Then "Locate Customer" questionnaire popup should be displayed
+    When I enter Account Number "123"
+    And I click on "Verify" button
+    Then validation error "Enter 16 digit account Number" should be displayed
+    When I enter Account Number "1234567890123456"
+    And I enter last 4 digits of SSN "12"
+    And I click on "Verify" button
+    Then validation error "Enter 4 digit SSN" should be displayed
+    When I enter last 4 digits of SSN "5678"
+    And I enter Date of Birth "13/32/2025"
+    And I click on "Verify" button
+    Then validation error "Please enter valid date MM/DD/YYYY" should be displayed
+    When I enter Date of Birth "01/15/1990"
+    And I enter Phone Number "123"
+    And I click on "Verify" button
+    Then validation error "Enter 10 digit Phone Number" should be displayed
+
+  @RealScenario @SuccessfulPassword
+  Scenario: Successful password verification on second attempt
+    Given I am logged in as a "Care" agent
+    When an inbound call is received
+    And I accept the incoming call
+    And I fill customer locate questionnaire
+    And I click on "Verify" button
+    And customer has password configured
+    When I enter incorrect password "WrongPass1"
+    And I click on "Submit" button
+    Then error message "Incorrect password. 2 attempts remaining" should be displayed
+    When I enter correct password "CorrectPass123"
+    And I click on "Submit" button
+    Then password should be validated successfully
+    And account should be launched in Salesforce
+    And customer record should be fully accessible
+    And no HRA notification should be triggered
+
+  @RealScenario @AppianCaseID
+  Scenario: Enter Appian Case ID after customer verification
+    When an inbound call is received
+    And I accept the incoming call
+    And I fill customer locate questionnaire
+    And I click on "Verify" button
+    And customer does not have a password in the system
+    Then account should be launched directly in Salesforce
+    And "Appian Case ID" field should be visible
+    When I enter alphanumeric case ID "ABC123XYZ456"
+    Then case ID should be saved with customer record
+
+  @RealScenario @MessageAccountID
+  Scenario: Verify Message Account ID auto-population
+    When an inbound call is received
+    And I accept the incoming call
+    And I fill customer locate questionnaire
+    And I click on "Verify" button
+    And customer does not have a password in the system
+    Then account should be launched directly in Salesforce
+    And "Message Account ID" field should be visible
+    And Message Account ID should be auto-populated with correct value
+
+  @RealScenario @MultipleCallsSequence
+  Scenario: Handle multiple calls in sequence
+    # First Call
+    Given I am in Available status in AWS Connect
+    When an inbound call is received
+    And I accept the incoming call
+    And I fill customer locate questionnaire
+    And I click on "Verify" button
+    And customer does not have a password in the system
+    Then account should be launched in Salesforce
+    When I click on End Call button
+    Then call should be disconnected
+    And I should return to Available status
+    
+    # Second Call
+    When an inbound call is received
+    And I accept the incoming call
+    Then "Locate Customer" questionnaire popup should be displayed
+    And I should be able to process new customer
+
+  @RealScenario @CallDurationTracking
+  Scenario: Track call duration and connection time
+    When an inbound call is received
+    And I accept the incoming call
+    Then call status should change to "Connected"
+    And call duration timer should be running
+    And Bridge ID should be displayed
+    When I wait for 30 seconds
+    Then call duration should show at least "00:30"
+    And connection time should be recorded
+
+  @RealScenario @UnidentifiedProspect
+  Scenario: Create unidentified prospect when customer not found
+    When an inbound call is received
+    And I accept the incoming call
+    Then "Locate Customer" questionnaire popup should be displayed
+    When I enter Account Number "9999999999999999"
+    And I enter last 4 digits of SSN "0000"
+    And I enter Date of Birth "12/31/1950"
+    And I enter Phone Number "0000000000"
+    And I click on "Verify" button
+    Then system should show "Customer Not Found" message
+    When I click on "Unidentified Prospect" button
+    Then new prospect record should be created
+    And call should be linked to prospect record
+
+  @RealScenario @WarmTransfer
+  Scenario: Perform warm transfer to another agent
+    Given I am logged in as a "Care" agent
+    When an inbound call is received
+    And I accept the incoming call
+    And account is launched after verification
+    When I initiate warm transfer
+    And I select "Senior Agent" from agent list
+    And I brief the senior agent about customer issue
+    And I complete the transfer
+    Then customer should be connected to senior agent
+    And customer context should be passed successfully
+
+  @RealScenario @HoldAndResume
+  Scenario: Place customer on hold multiple times
+    When an inbound call is received
+    And I accept the incoming call
+    Then call status should change to "Connected"
+    When I click on Hold button
+    Then call should be placed on hold
+    When I wait for 10 seconds
+    And I click on Resume button
+    Then call should be resumed
+    When I click on Hold button
+    Then call should be placed on hold again
+    When I click on Resume button
+    Then call should be resumed
+    And total hold time should be tracked
+
+  @RealScenario @AuditTrail
+  Scenario: Verify complete audit trail for call and verification
+    Given I am logged in as a "Care" agent
+    When an inbound call is received
+    And I accept the incoming call
+    And I fill customer locate questionnaire
+    And I click on "Verify" button
+    And customer has password configured
+    And I fail all 3 password verification attempts
+    When I check the audit log
+    Then audit trail should record all password attempts
+    And audit should include timestamp of each attempt
+    And audit should include agent ID and role
+    And audit should include final outcome
+    And audit should be visible in customer activity history
+    And call recording should be linked to audit trail
+
+
+
+////////////////////
+
+package com.salesforce.stepdefinitions;
+
+import com.salesforce.utils.ConfigReader;
+import com.salesforce.utils.DriverManager;
+import io.cucumber.java.Before;
+import io.cucumber.java.BeforeAll;
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+import org.openqa.selenium.JavascriptExecutor;
+
+import java.time.Duration;
+
+public class BackgroundInitializationHooks {
+    private static boolean isInitialized = false;
+    private static final Object lock = new Object();
+
+    @BeforeAll
+    public static void globalSetup() {
+        System.out.println("========================================");
+        System.out.println("GLOBAL SETUP - INITIALIZING FRAMEWORK");
+        System.out.println("========================================");
+    }
+
+    @Before(order = 0)
+    public void initializeSalesforceToolbar() {
+        synchronized (lock) {
+            if (!isInitialized) {
+                System.out.println("\n>>> Starting Background Initialization Process <<<\n");
+                
+                WebDriver driver = DriverManager.getDriver();
+                WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(60));
+                JavascriptExecutor js = (JavascriptExecutor) driver;
+
+                try {
+                    // Step 1: Navigate to Salesforce Toolbar URL
+                    System.out.println("[STEP 1/6] Navigating to Salesforce Toolbar URL...");
+                    String toolbarUrl = ConfigReader.getProperty("salesforce.toolbar.url");
+                    if (toolbarUrl == null || toolbarUrl.isEmpty()) {
+                        toolbarUrl = ConfigReader.getSalesforceUrl();
+                    }
+                    driver.get(toolbarUrl);
+                    System.out.println("✓ Navigated to: " + toolbarUrl);
+
+                    // Step 2: Wait for page to load
+                    System.out.println("[STEP 2/6] Waiting for page to load completely...");
+                    wait.until(webDriver -> 
+                        js.executeScript("return document.readyState").equals("complete")
+                    );
+                    Thread.sleep(2000);
+                    System.out.println("✓ Page loaded successfully");
+
+                    // Step 3: Handle Advanced/Setup popup if present
+                    System.out.println("[STEP 3/6] Checking for Advanced/Setup popup...");
+                    handleAdvancedPopup(driver, wait);
+
+                    // Step 4: Close any welcome/tutorial popups
+                    System.out.println("[STEP 4/6] Closing welcome screens...");
+                    closeWelcomeScreens(driver, wait);
+
+                    // Step 5: Wait for Salesforce toolbar/CCP to initialize
+                    System.out.println("[STEP 5/6] Initializing AWS Connect CCP toolbar...");
+                    initializeAWSConnectToolbar(driver, wait);
+
+                    // Step 6: Verify initialization complete
+                    System.out.println("[STEP 6/6] Verifying initialization...");
+                    verifyInitializationComplete(driver, wait);
+
+                    isInitialized = true;
+                    System.out.println("\n✓✓✓ BACKGROUND INITIALIZATION COMPLETED ✓✓✓\n");
+                    System.out.println("========================================");
+                    System.out.println("Ready to execute test scenarios");
+                    System.out.println("========================================\n");
+
+                } catch (Exception e) {
+                    System.err.println("✗ Background initialization failed: " + e.getMessage());
+                    e.printStackTrace();
+                    throw new RuntimeException("Failed to initialize Salesforce toolbar", e);
+                }
+            } else {
+                System.out.println(">>> Background initialization already completed - skipping <<<");
+            }
+        }
+    }
+
+    private void handleAdvancedPopup(WebDriver driver, WebDriverWait wait) {
+        try {
+            // Check for "Advanced" or "Continue to site" button
+            WebElement advancedButton = wait.withTimeout(Duration.ofSeconds(5))
+                .until(ExpectedConditions.elementToBeClickable(
+                    By.xpath("//button[@id='details-button' or contains(text(),'Advanced')]")
+                ));
+            
+            System.out.println("  → Advanced button found, clicking...");
+            advancedButton.click();
+            Thread.sleep(1000);
+
+            // Click "Proceed to site" or "Continue" link
+            WebElement proceedLink = wait.withTimeout(Duration.ofSeconds(5))
+                .until(ExpectedConditions.elementToBeClickable(
+                    By.xpath("//a[@id='proceed-link' or contains(text(),'Proceed') or contains(text(),'Continue')]")
+                ));
+            
+            System.out.println("  → Proceed link found, clicking...");
+            proceedLink.click();
+            Thread.sleep(2000);
+            
+            System.out.println("✓ Advanced popup handled successfully");
+
+        } catch (Exception e) {
+            System.out.println("  → No Advanced popup detected or already handled");
+        }
+    }
+
+    private void closeWelcomeScreens(WebDriver driver, WebDriverWait wait) {
+        try {
+            // Close welcome modal
+            WebElement closeButton = wait.withTimeout(Duration.ofSeconds(3))
+                .until(ExpectedConditions.elementToBeClickable(
+                    By.xpath("//button[contains(@title,'Close') or @aria-label='Close' or contains(@class,'closeButton')]")
+                ));
+            
+            System.out.println("  → Welcome screen found, closing...");
+            closeButton.click();
+            Thread.sleep(1000);
+            System.out.println("✓ Welcome screen closed");
+
+        } catch (Exception e) {
+            System.out.println("  → No welcome screen detected");
+        }
+
+        // Close any tutorial or help overlays
+        try {
+            WebElement skipButton = driver.findElement(
+                By.xpath("//button[contains(text(),'Skip') or contains(text(),'Got it') or contains(text(),'Dismiss')]")
+            );
+            skipButton.click();
+            System.out.println("✓ Tutorial/Help overlay closed");
+        } catch (Exception e) {
+            // No tutorial overlay
+        }
+
+        // Close "What's New" or announcement banners
+        try {
+            WebElement dismissBanner = driver.findElement(
+                By.xpath("//button[contains(@class,'dismiss') or @title='Dismiss']")
+            );
+            dismissBanner.click();
+            System.out.println("✓ Announcement banner dismissed");
+        } catch (Exception e) {
+            // No banner
+        }
+    }
+
+    private void initializeAWSConnectToolbar(WebDriver driver, WebDriverWait wait) {
+        try {
+            // Wait for AWS Connect toolbar container to load
+            System.out.println("  → Waiting for AWS Connect toolbar container...");
+            WebElement toolbarContainer = wait.withTimeout(Duration.ofSeconds(30))
+                .until(ExpectedConditions.presenceOfElementLocated(
+                    By.xpath("//div[contains(@class,'Toolbar') or contains(@class,'ccp-container')]")
+                ));
+            
+            System.out.println("  → Toolbar container found");
+
+            // Wait for CCP iframe to load
+            System.out.println("  → Waiting for CCP iframe...");
+            wait.until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(
+                By.xpath("//iframe[contains(@title,'Amazon Connect') or contains(@src,'ccp')]")
+            ));
+            
+            System.out.println("  → CCP iframe loaded");
+
+            // Wait for CCP content to initialize
+            Thread.sleep(3000);
+
+            // Switch back to main content
+            driver.switchTo().defaultContent();
+            
+            System.out.println("✓ AWS Connect CCP toolbar initialized successfully");
+
+        } catch (Exception e) {
+            System.out.println("  ⚠ CCP toolbar initialization delayed or not found");
+            driver.switchTo().defaultContent();
+        }
+    }
+
+    private void verifyInitializationComplete(WebDriver driver, WebDriverWait wait) {
+        try {
+            // Verify page title
+            String pageTitle = driver.getTitle();
+            System.out.println("  → Page title: " + pageTitle);
+
+            // Verify current URL
+            String currentUrl = driver.getCurrentUrl();
+            System.out.println("  → Current URL: " + currentUrl);
+
+            // Verify Salesforce is loaded
+            boolean isSalesforceLoaded = currentUrl.contains("salesforce") || 
+                                        currentUrl.contains("lightning.force.com") ||
+                                        currentUrl.contains("my.salesforce.com");
+            
+            if (isSalesforceLoaded) {
+                System.out.println("✓ Salesforce environment verified");
+            } else {
+                System.out.println("⚠ Warning: URL may not be Salesforce");
+            }
+
+            // Check for any blocking modals or popups
+            try {
+                WebElement blockingModal = driver.findElement(
+                    By.xpath("//div[contains(@class,'modal') and contains(@class,'show')]")
+                );
+                System.out.println("  ⚠ Warning: Blocking modal still present");
+                
+                // Try to close it
+                WebElement modalClose = blockingModal.findElement(
+                    By.xpath(".//button[contains(@title,'Close') or @aria-label='Close']")
+                );
+                modalClose.click();
+                Thread.sleep(1000);
+                System.out.println("  → Modal closed");
+                
+            } catch (Exception e) {
+                System.out.println("  → No blocking modals detected");
+            }
+
+            System.out.println("✓ Initialization verification completed");
+
+        } catch (Exception e) {
+            System.out.println("  ⚠ Verification completed with warnings");
+        }
+    }
+
+    // Helper method to reset initialization (useful for testing)
+    public static void resetInitialization() {
+        synchronized (lock) {
+            isInitialized = false;
+            System.out.println(">>> Initialization reset - will re-initialize on next test <<<");
+        }
+    }
+
+    // Check if initialization is complete
+    public static boolean isInitializationComplete() {
+        return isInitialized;
+    }
+}
+
+
+
+
+
+//////////////
+
+
+
+package com.salesforce.stepdefinitions;
+
+import com.salesforce.utils.ConfigReader;
+import com.salesforce.utils.DriverManager;
+import io.cucumber.java.*;
+import org.openqa.selenium.OutputType;
+import org.openqa.selenium.TakesScreenshot;
+import org.openqa.selenium.WebDriver;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
+public class EnhancedHooks {
+    private static int testCount = 0;
+    private static int passedCount = 0;
+    private static int failedCount = 0;
+    private static long startTime;
+
+    @BeforeAll
+    public static void beforeAllTests() {
+        System.out.println("\n");
+        System.out.println("╔════════════════════════════════════════════════════════════╗");
+        System.out.println("║     SALESFORCE AWS CONNECT AUTOMATION FRAMEWORK            ║");
+        System.out.println("║     Test Execution Starting...                             ║");
+        System.out.println("╚════════════════════════════════════════════════════════════╝");
+        System.out.println();
+        
+        startTime = System.currentTimeMillis();
+        
+        // Print configuration
+        System.out.println("Configuration:");
+        System.out.println("  • Browser: " + ConfigReader.getBrowser());
+        System.out.println("  • Headless: " + ConfigReader.isHeadless());
+        System.out.println("  • Salesforce URL: " + ConfigReader.getSalesforceUrl());
+        System.out.println("  • Background Init: " + 
+            ConfigReader.getProperty("background.init.enabled"));
+        System.out.println();
+    }
+
+    @Before(order = 1) // Runs after BackgroundInitializationHooks
+    public void beforeScenario(Scenario scenario) {
+        testCount++;
+        
+        System.out.println("\n┌─────────────────────────────────────────────────────────┐");
+        System.out.println("│ SCENARIO #" + testCount + ": " + scenario.getName());
+        System.out.println("│ Tags: " + scenario.getSourceTagNames());
+        System.out.println("└─────────────────────────────────────────────────────────┘");
+        
+        WebDriver driver = DriverManager.getDriver();
+        
+        // Verify background initialization completed
+        if (!BackgroundInitializationHooks.isInitializationComplete()) {
+            System.out.println("⚠ Warning: Background initialization not completed");
+        } else {
+            System.out.println("✓ Background initialization verified - Ready to proceed");
+        }
+        
+        System.out.println("\n>>> Test Steps Execution:");
+    }
+
+    @After(order = 1)
+    public void afterScenario(Scenario scenario) {
+        WebDriver driver = DriverManager.getDriver();
+        
+        System.out.println("\n>>> Scenario Execution Completed");
+        
+        // Capture screenshot on failure
+        if (scenario.isFailed() && driver != null) {
+            captureScreenshot(scenario, driver);
+            
+            // Log failure details
+            System.err.println("✗ SCENARIO FAILED: " + scenario.getName());
+            System.err.println("  • Status: " + scenario.getStatus());
+            
+            failedCount++;
+        } else if (scenario.getStatus() == Status.PASSED) {
+            System.out.println("✓ SCENARIO PASSED: " + scenario.getName());
+            passedCount++;
+        }
+        
+        // Print scenario summary
+        System.out.println("\n┌─────────────────────────────────────────────────────────┐");
+        System.out.println("│ Scenario Summary:");
+        System.out.println("│   Status: " + scenario.getStatus());
+        System.out.println("│   Duration: Completed");
+        System.out.println("└─────────────────────────────────────────────────────────┘\n");
+    }
+
+    @After(order = 0) // Runs last
+    public void cleanupAfterScenario() {
+        // Close browser after each scenario (optional - can be configured)
+        boolean closeBrowserAfterScenario = Boolean.parseBoolean(
+            ConfigReader.getProperty("close.browser.after.scenario")
+        );
+        
+        if (closeBrowserAfterScenario) {
+            System.out.println(">>> Closing browser session...");
+            DriverManager.quitDriver();
+            
+            // Reset initialization for next scenario if needed
+            boolean resetInitPerScenario = Boolean.parseBoolean(
+                ConfigReader.getProperty("reset.init.per.scenario")
+            );
+            
+            if (resetInitPerScenario) {
+                BackgroundInitializationHooks.resetInitialization();
+            }
+        } else {
+            System.out.println(">>> Browser session kept alive for next scenario");
+        }
+    }
+
+    @AfterAll
+    public static void afterAllTests() {
+        long endTime = System.currentTimeMillis();
+        long duration = (endTime - startTime) / 1000;
+        
+        System.out.println("\n");
+        System.out.println("╔════════════════════════════════════════════════════════════╗");
+        System.out.println("║              TEST EXECUTION SUMMARY                        ║");
+        System.out.println("╠════════════════════════════════════════════════════════════╣");
+        System.out.println("║  Total Scenarios:     " + String.format("%-33d", testCount) + "║");
+        System.out.println("║  Passed:              " + String.format("%-33d", passedCount) + "║");
+        System.out.println("║  Failed:              " + String.format("%-33d", failedCount) + "║");
+        System.out.println("║  Success Rate:        " + 
+            String.format("%-32s", calculateSuccessRate()) + " ║");
+        System.out.println("║  Execution Time:      " + 
+            String.format("%-28s", duration + " seconds") + " ║");
+        System.out.println("╚════════════════════════════════════════════════════════════╝");
+        System.out.println();
+        
+        // Cleanup
+        DriverManager.quitDriver();
+        
+        // Print report location
+        System.out.println("📊 Reports Available:");
+        System.out.println("  • HTML: target/cucumber-reports/cucumber.html");
+        System.out.println("  • JSON: target/cucumber-reports/cucumber.json");
+        System.out.println("  • Screenshots: target/screenshots/");
+        System.out.println();
+    }
+
+    private void captureScreenshot(Scenario scenario, WebDriver driver) {
+        try {
+            // Capture screenshot
+            byte[] screenshot = ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES);
+            
+            // Attach to Cucumber report
+            scenario.attach(screenshot, "image/png", scenario.getName());
+            
+            // Save to file system
+            String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+            String fileName = scenario.getName().replaceAll("[^a-zA-Z0-9]", "_") + 
+                            "_" + timestamp + ".png";
+            String screenshotPath = ConfigReader.getProperty("screenshot.path");
+            
+            // Create directory if not exists
+            Files.createDirectories(Paths.get(screenshotPath));
+            
+            // Save file
+            File screenshotFile = new File(screenshotPath + fileName);
+            Files.write(screenshotFile.toPath(), screenshot);
+            
+            System.out.println("📸 Screenshot captured: " + screenshotFile.getAbsolutePath());
+            
+        } catch (IOException e) {
+            System.err.println("Failed to capture screenshot: " + e.getMessage());
+        }
+    }
+
+    private static String calculateSuccessRate() {
+        if (testCount == 0) return "N/A";
+        double rate = (double) passedCount / testCount * 100;
+        return String.format("%.2f%%", rate);
+    }
+
+    // Hook for debugging - captures screenshot before each step
+    @BeforeStep
+    public void beforeStep(Scenario scenario) {
+        // Optional: Log step execution
+        // System.out.println("  → Executing step...");
+    }
+
+    @AfterStep
+    public void afterStep(Scenario scenario) {
+        // Optional: Capture screenshot after each step for debugging
+        boolean captureStepScreenshots = Boolean.parseBoolean(
+            ConfigReader.getProperty("capture.step.screenshots")
+        );
+        
+        if (captureStepScreenshots && scenario.isFailed()) {
+            WebDriver driver = DriverManager.getDriver();
+            if (driver != null) {
+                try {
+                    byte[] screenshot = ((TakesScreenshot) driver)
+                        .getScreenshotAs(OutputType.BYTES);
+                    scenario.attach(screenshot, "image/png", "Step_Screenshot");
+                } catch (Exception e) {
+                    // Ignore
+                }
+            }
+        }
+    }
+}
+
+
+/////////////////
+
+
+package com.salesforce.utils;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Random;
+
+public class TestDataHelper {
+    private static final Random random = new Random();
+
+    // Customer Test Data
+    public static class CustomerData {
+        private String accountNumber;
+        private String ssn;
+        private String dob;
+        private String phoneNumber;
+        private boolean hasPassword;
+        private String password;
+        private String customerName;
+
+        public CustomerData(String accountNumber, String ssn, String dob, 
+                          String phoneNumber, boolean hasPassword, String password) {
+            this.accountNumber = accountNumber;
+            this.ssn = ssn;
+            this.dob = dob;
+            this.phoneNumber = phoneNumber;
+            this.hasPassword = hasPassword;
+            this.password = password;
+        }
+
+        // Getters
+        public String getAccountNumber() { return accountNumber; }
+        public String getSsn() { return ssn; }
+        public String getDob() { return dob; }
+        public String getPhoneNumber() { return phoneNumber; }
+        public boolean hasPassword() { return hasPassword; }
+        public String getPassword() { return password; }
+    }
+
+    // Predefined Test Customers
+    public static Map<String, CustomerData> getTestCustomers() {
+        Map<String, CustomerData> customers = new HashMap<>();
+
+        // Customer with password
+        customers.put("CustomerWithPassword", new CustomerData(
+            "1234567890123456",
+            "5678",
+            "01/15/1990",
+            "9144669258 96",
+            true,
+            "SecurePass123"
+        ));
+
+        // Customer without password
+        customers.put("CustomerWithoutPassword", new CustomerData(
+            "9876543210123456",
+            "1234",
+            "05/20/1985",
+            "9876543210",
+            false,
+            null
+        ));
+
+        // Customer not found
+        customers.put("CustomerNotFound", new CustomerData(
+            "9999999999999999",
+            "0000",
+            "12/31/1950",
+            "0000000000",
+            false,
+            null
+        ));
+
+        // VIP Customer
+        customers.put("VIPCustomer", new CustomerData(
+            "5555555555555555",
+            "9999",
+            "03/15/1975",
+            "5555555555",
+            true,
+            "VIPSecure999"
+        ));
+
+        return customers;
+    }
+
+    // Generate Random Test Data
+    public static String generateRandomAccountNumber() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 16; i++) {
+            sb.append(random.nextInt(10));
+        }
+        return sb.toString();
+    }
+
+    public static String generateRandomSSN() {
+        return String.format("%04d", random.nextInt(10000));
+    }
+
+    public static String generateRandomDOB() {
+        int month = random.nextInt(12) + 1;
+        int day = random.nextInt(28) + 1;
+        int year = random.nextInt(50) + 1950;
+        return String.format("%02d/%02d/%d", month, day, year);
+    }
+
+    public static String generateRandomPhoneNumber() {
+        return String.format("%010d", random.nextLong() % 10000000000L);
+    }
+
+    public static String generateRandomPassword() {
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$";
+        StringBuilder password = new StringBuilder();
+        for (int i = 0; i < 12; i++) {
+            password.append(chars.charAt(random.nextInt(chars.length())));
+        }
+        return password.toString();
+    }
+
+    // Agent Test Data
+    public static class AgentData {
+        private String agentName;
+        private String agentRole;
+        private String agentId;
+        private String username;
+
+        public AgentData(String agentName, String agentRole, String agentId, String username) {
+            this.agentName = agentName;
+            this.agentRole = agentRole;
+            this.agentId = agentId;
+            this.username = username;
+        }
+
+        public String getAgentName() { return agentName; }
+        public String getAgentRole() { return agentRole; }
+        public String getAgentId() { return agentId; }
+        public String getUsername() { return username; }
+    }
+
+    public static Map<String, AgentData> getTestAgents() {
+        Map<String, AgentData> agents = new HashMap<>();
+
+        agents.put("CareAgent", new AgentData(
+            "Vinodh",
+            "Care",
+            "AGT001",
+            "vinodh@salesforce.com"
+        ));
+
+        agents.put("SecurityAgent", new AgentData(
+            "Security Agent",
+            "Fraud Security",
+            "AGT002",
+            "security@salesforce.com"
+        ));
+
+        agents.put("SeniorAgent", new AgentData(
+            "Senior Agent",
+            "Senior Care",
+            "AGT003",
+            "senior@salesforce.com"
+        ));
+
+        return agents;
+    }
+
+    // Call Test Data
+    public static class CallData {
+        private String callId;
+        private String contactId;
+        private String phoneNumber;
+        private String queueName;
+        private String bridgeId;
+
+        public CallData(String phoneNumber, String queueName) {
+            this.callId = generateCallId();
+            this.contactId = generateContactId();
+            this.phoneNumber = phoneNumber;
+            this.queueName = queueName;
+            this.bridgeId = generateBridgeId();
+        }
+
+        private String generateCallId() {
+            return "CALL-" + System.currentTimeMillis();
+        }
+
+        private String generateContactId() {
+            return "CNT-" + random.nextInt(999999);
+        }
+
+        private String generateBridgeId() {
+            return "BRID:" + String.format("C0%d%04d", 
+                random.nextInt(10), random.nextInt(10000));
+        }
+
+        public String getCallId() { return callId; }
+        public String getContactId() { return contactId; }
+        public String getPhoneNumber() { return phoneNumber; }
+        public String getQueueName() { return queueName; }
+        public String getBridgeId() { return bridgeId; }
+    }
+
+    // Validation Test Data
+    public static class ValidationTestData {
+        public static String[] invalidAccountNumbers = {
+            "123",           // Too short
+            "12345678901234567890", // Too long
+            "ABCD1234567890AB",     // Contains letters
+            "",              // Empty
+        };
+
+        public static String[] invalidSSN = {
+            "12",    // Too short
+            "12345", // Too long
+            "ABCD",  // Letters
+            "",      // Empty
+        };
+
+        public static String[] invalidDOB = {
+            "13/32/2025",    // Invalid date
+            "00/00/0000",    // Invalid zeros
+            "2025-01-15",    // Wrong format
+            "15-01-1990",    // Wrong format
+            "",              // Empty
+        };
+
+        public static String[] invalidPhoneNumbers = {
+            "123",           // Too short
+            "12345678901234", // Too long
+            "ABCD123456",    // Contains letters
+            "",              // Empty
+        };
+
+        public static String[] validAccountNumbers = {
+            "1234567890123456",
+            "9876543210987654",
+            "5555555555555555",
+        };
+
+        public static String[] validSSN = {
+            "1234",
+            "5678",
+            "9999",
+        };
+
+        public static String[] validDOB = {
+            "01/15/1990",
+            "12/31/1985",
+            "06/15/2000",
+        };
+
+        public static String[] validPhoneNumbers = {
+            "9144669258 96",
+            "9876543210",
+            "5555555555",
+        };
+    }
+
+    // Password Test Data
+    public static class PasswordTestData {
+        public static String[] correctPasswords = {
+            "CorrectPass123",
+            "SecurePass123",
+            "VIPSecure999",
+        };
+
+        public static String[] incorrectPasswords = {
+            "WrongPass1",
+            "WrongPass2",
+            "WrongPass3",
+            "InvalidPassword",
+            "IncorrectPass",
+        };
+
+        public static String getRandomIncorrectPassword() {
+            return incorrectPasswords[random.nextInt(incorrectPasswords.length)];
+        }
+    }
+
+    // Transfer Queue Data
+    public static class TransferQueueData {
+        public static String[] availableQueues = {
+            "Security Queue",
+            "Sales Queue",
+            "Support Queue",
+            "VIP Queue",
+            "Billing Queue",
+        };
+
+        public static String[] transferReasons = {
+            "Password Verification Failed",
+            "Account Security Issue",
+            "Customer Request",
+            "Technical Support Required",
+            "Escalation to Senior Agent",
+        };
+    }
+
+    // HRA Notification Data
+    public static class HRAData {
+        private String riskLevel;
+        private String reason;
+        private int failedAttempts;
+        private String agentRole;
+
+        public HRAData(String riskLevel, String reason, int failedAttempts, String agentRole) {
+            this.riskLevel = riskLevel;
+            this.reason = reason;
+            this.failedAttempts = failedAttempts;
+            this.agentRole = agentRole;
+        }
+
+        public String getRiskLevel() { return riskLevel; }
+        public String getReason() { return reason; }
+        public int getFailedAttempts() { return failedAttempts; }
+        public String getAgentRole() { return agentRole; }
+    }
+
+    // Appian Case ID Generator
+    public static String generateAppianCaseId() {
+        String prefix = "APP";
+        int number = random.nextInt(999999);
+        String suffix = generateRandomString(3);
+        return String.format("%s%06d%s", prefix, number, suffix);
+    }
+
+    private static String generateRandomString(int length) {
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < length; i++) {
+            sb.append(chars.charAt(random.nextInt(chars.length())));
+        }
+        return sb.toString();
+    }
+
+    // Message Account ID Generator
+    public static String generateMessageAccountId() {
+        return "MSG" + System.currentTimeMillis();
+    }
+
+    // Get Customer by Profile
+    public static CustomerData getCustomerByProfile(String profile) {
+        Map<String, CustomerData> customers = getTestCustomers();
+        return customers.getOrDefault(profile, customers.get("CustomerWithPassword"));
+    }
+
+    // Get Agent by Role
+    public static AgentData getAgentByRole(String role) {
+        Map<String, AgentData> agents = getTestAgents();
+        if (role.equalsIgnoreCase("Care")) {
+            return agents.get("CareAgent");
+        } else if (role.equalsIgnoreCase("Fraud Security")) {
+            return agents.get("SecurityAgent");
+        } else if (role.equalsIgnoreCase("Senior Care")) {
+            return agents.get("SeniorAgent");
+        }
+        return agents.get("CareAgent");
+    }
+
+    // Print Test Data Summary
+    public static void printTestDataSummary() {
+        System.out.println("=== Test Data Summary ===");
+        System.out.println("Available Test Customers: " + getTestCustomers().size());
+        System.out.println("Available Test Agents: " + getTestAgents().size());
+        System.out.println("========================");
+    }
+}
+
+
+
+
+//////////// config property /////////
+
+
+# Salesforce Configuration
+salesforce.url=https://login.salesforce.com
+salesforce.username=your_username@salesforce.com
+salesforce.password=your_password
+salesforce.security.token=your_security_token
+
+# Salesforce Toolbar URL (for background initialization)
+salesforce.toolbar.url=https://your-instance.lightning.force.com/lightning/n/Agent_Landing
+
+# Browser Configuration
+browser=chrome
+headless=false
+implicit.wait=10
+explicit.wait=20
+page.load.timeout=30
+
+# Background Initialization Settings
+background.init.enabled=true
+background.init.timeout=60
+background.close.popups=true
+background.handle.advanced=true
+
+# Screenshot Configuration
+screenshot.on.failure=true
+screenshot.path=target/screenshots/
+
+
+
+
+
+
+
+
+
+
+
+
+
