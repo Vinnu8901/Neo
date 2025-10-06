@@ -12,50 +12,78 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 /**
- * ElementStrategyCollector (with runtime ElementState)
+ * Clean ElementStrategyCollector (Java 8)
  *
- * - Sweeps all windows -> all iframes (any depth) -> each document (including open Shadow DOM)
- * - Generates multiple locator strategies (generic + Salesforce LWC + Pega)
- * - Captures runtime element state (computed visibility, isDisplayed, isEnabled, readonly, checked, selected, tabindex, visibilityReason...)
- * - Exports Markdown with full context (window title/URL, frame chain, in:shadow, in:modal)
+ * - Sweeps all windows -> frames (any depth) -> document (including open shadow DOM)
+ * - Generates locator strategies (generic + Salesforce LWC + Pega)
+ * - Captures runtime ElementState (visible/hidden, enabled/disabled, readonly, checked, selected, tabindex, reasons)
+ * - Exports Markdown (default) and CSV (optional)
  *
- * Usage:
- *   ElementStrategyCollector.sweepAllWindowsAndExport(driver, "C:/Automation/Exports/out.md");
+ * Usage examples:
+ *   ElementStrategyCollector.sweepAllWindowsAndExport(driver, "C:/Exports/out.md");
+ *   ElementStrategyCollector.sweepAllWindowsAndExportCSV(driver, "C:/Exports/out.csv");
  */
 public class ElementStrategyCollector {
 
-    // ===== Public entrypoint =====
+    // ========== Public entrypoints ==========
+
+    /** Sweep all windows/frames and export Markdown */
     public static void sweepAllWindowsAndExport(WebDriver driver, String outPath) throws IOException {
-        String original = driver.getWindowHandle();
-        List<String> handles = new ArrayList<>(driver.getWindowHandles());
-        List<ElementWithStrategies> all = new ArrayList<>();
-
-        for (int wi = 0; wi < handles.size(); wi++) {
-            String h = handles.get(wi);
-            try { driver.switchTo().window(h); } catch (NoSuchWindowException e) { continue; }
-            WindowCtx wctx = currentWindowCtx(driver, wi, h);
-            Deque<FrameCtx> chain = new ArrayDeque<>();
-            Deque<Integer> idxPath = new ArrayDeque<>();
-            all.addAll(collectWithContext(driver, wctx, chain, idxPath));
-        }
-
-        try { driver.switchTo().window(original); } catch (Exception ignored) {}
+        List<ElementWithStrategies> all = sweepAllWindows(driver);
         exportPrettyWithContext(all, outPath);
     }
 
-    // ===== Context models =====
-    static class WindowCtx { String handle, title, url; int index; boolean isPopup; }
-    static class FrameCtx { String name, id, title, src; boolean crossOrigin; }
+    /** Sweep all windows/frames and export CSV */
+    public static void sweepAllWindowsAndExportCSV(WebDriver driver, String csvPath) throws IOException {
+        List<ElementWithStrategies> all = sweepAllWindows(driver);
+        exportCsv(all, csvPath);
+    }
+
+    /** Core sweep that returns collected items (no file IO) */
+    public static List<ElementWithStrategies> sweepAllWindows(WebDriver driver) {
+        String original = null;
+        try {
+            original = driver.getWindowHandle();
+        } catch (Exception ignored) {}
+
+        List<String> handles = new ArrayList<String>(driver.getWindowHandles());
+        List<ElementWithStrategies> allItems = new ArrayList<ElementWithStrategies>();
+
+        for (int wi = 0; wi < handles.size(); wi++) {
+            String h = handles.get(wi);
+            try {
+                driver.switchTo().window(h);
+            } catch (NoSuchWindowException e) {
+                continue;
+            }
+
+            WindowCtx wctx = currentWindowCtx(driver, wi, h);
+            Deque<FrameCtx> chain = new ArrayDeque<FrameCtx>();
+            Deque<Integer> idxPath = new ArrayDeque<Integer>();
+            allItems.addAll(collectWithContext(driver, wctx, chain, idxPath));
+        }
+
+        try { if (original != null) driver.switchTo().window(original); } catch (Exception ignored) {}
+        return allItems;
+    }
+
+    // ========== Context models ==========
+
+    static class WindowCtx { String handle; String title; String url; int index; boolean isPopup; }
+
+    static class FrameCtx { String name; String id; String title; String src; boolean crossOrigin; }
+
     static class ElementContext {
         WindowCtx window;
-        List<FrameCtx> frameChain = new ArrayList<>();
+        List<FrameCtx> frameChain = new ArrayList<FrameCtx>();
         String framePath;
         boolean inShadow;
         boolean inModal;
         String modalKind;
     }
 
-    // ===== Element state DTO =====
+    // ========== Element state DTO ==========
+
     public static class ElementState {
         public boolean isDisplayed = false;
         public boolean computedVisible = false;
@@ -73,77 +101,115 @@ public class ElementStrategyCollector {
         public String computedOpacity = "";
     }
 
-    // ===== Node captured =====
+    // ========== Node captured ==========
+
     public static class ElementNode {
         public String framePath;
         public WebElement element;
-        public String tag,id,name,cls,type,placeholder,ariaLabel,title,role,value,text,forId,outerHtml;
-        public String dataTestId,dataCtl,dataField,dataRecordId,dataLabel,dataTest,dataTestid,dataQa,dataCy;
+        public String tag, id, name, cls, type, placeholder, ariaLabel, title, role, value, text, forId, outerHtml;
+        public String dataTestId, dataCtl, dataField, dataRecordId, dataLabel, dataTest, dataTestid, dataQa, dataCy;
 
         public static ElementNode from(WebElement el, String framePath) {
             ElementNode n = new ElementNode();
-            n.framePath = framePath; n.element = el;
+            n.framePath = framePath;
+            n.element = el;
             try {
-                n.tag = safe(() -> el.getTagName());
-                n.id = attr(el,"id"); n.name = attr(el,"name"); n.cls = attr(el,"class");
-                n.type = attr(el,"type"); n.placeholder = attr(el,"placeholder");
-                n.ariaLabel = firstNonEmpty(attr(el,"aria-label"), attr(el,"aria-labelledby"));
-                n.title = attr(el,"title"); n.role = attr(el,"role"); n.value = attr(el,"value");
-                n.text = safe(() -> el.getText()); n.forId = attr(el,"for"); n.outerHtml = attr(el,"outerHTML");
-                n.dataTestId = attr(el,"data-test-id"); n.dataCtl = attr(el,"data-ctl"); n.dataField = attr(el,"data-field");
-                n.dataRecordId = attr(el,"data-recordid"); n.dataLabel = attr(el,"data-label");
-                n.dataTest = attr(el,"data-test"); n.dataTestid = attr(el,"data-testid");
-                n.dataQa = attr(el,"data-qa"); n.dataCy = attr(el,"data-cy");
+                n.tag = safe(new SupplierWithThrow<String>() { public String get() throws Exception { return el.getTagName(); }});
+                n.id = attr(el, "id");
+                n.name = attr(el, "name");
+                n.cls = attr(el, "class");
+                n.type = attr(el, "type");
+                n.placeholder = attr(el, "placeholder");
+                n.ariaLabel = firstNonEmpty(attr(el, "aria-label"), attr(el, "aria-labelledby"));
+                n.title = attr(el, "title");
+                n.role = attr(el, "role");
+                n.value = attr(el, "value");
+                n.text = safe(new SupplierWithThrow<String>() { public String get() throws Exception { return el.getText(); }});
+                n.forId = attr(el, "for");
+                n.outerHtml = attr(el, "outerHTML");
+                n.dataTestId = attr(el, "data-test-id");
+                n.dataCtl = attr(el, "data-ctl");
+                n.dataField = attr(el, "data-field");
+                n.dataRecordId = attr(el, "data-recordid");
+                n.dataLabel = attr(el, "data-label");
+                n.dataTest = attr(el, "data-test");
+                n.dataTestid = attr(el, "data-testid");
+                n.dataQa = attr(el, "data-qa");
+                n.dataCy = attr(el, "data-cy");
             } catch (StaleElementReferenceException ignored) {}
             return n;
         }
     }
 
-    // ===== Output record =====
+    // ========== Output record ==========
+
     public static class ElementWithStrategies {
         public String framePath;
         public String friendlyName;
         public String tag;
-        public List<String> strategies = new ArrayList<>();
+        public List<String> strategies = new ArrayList<String>();
         public String preview;
         public ElementContext context;
-        public ElementState state; // new
+        public ElementState state;
     }
 
-    // ===== Core sweep with context =====
-    private static List<ElementWithStrategies> collectWithContext(
-            WebDriver driver, WindowCtx wctx, Deque<FrameCtx> chain, Deque<Integer> idxPath) {
+    // ========== Core sweep with context ==========
 
-        List<ElementWithStrategies> bag = new ArrayList<>();
-        List<WebElement> els = collectInCurrentContext(driver); // includes open shadow DOM
+    private static List<ElementWithStrategies> collectWithContext(WebDriver driver, WindowCtx wctx, Deque<FrameCtx> chain, Deque<Integer> idxPath) {
+        List<ElementWithStrategies> bag = new ArrayList<ElementWithStrategies>();
+        List<WebElement> els = collectInCurrentContext(driver);
         String framePath = framePathToString(idxPath);
 
         for (WebElement el : els) {
             ElementNode n = ElementNode.from(el, framePath);
 
             ElementContext ec = new ElementContext();
-            ec.window = wctx; ec.framePath = framePath; ec.frameChain = new ArrayList<>(chain);
-            ec.inShadow = isInShadow(driver, el); ec.inModal = isInModal(driver, el); ec.modalKind = modalKind(driver, el);
+            ec.window = wctx;
+            ec.framePath = framePath;
+            ec.frameChain = new ArrayList<FrameCtx>(chain);
+            ec.inShadow = isInShadow(driver, el);
+            ec.inModal = isInModal(driver, el);
+            ec.modalKind = modalKind(driver, el);
 
             ElementWithStrategies r = new ElementWithStrategies();
-            r.framePath = framePath; r.tag = n.tag; r.preview = snip(n.outerHtml); r.friendlyName = deriveFriendlyName(driver, n); r.context = ec;
+            r.framePath = framePath;
+            r.tag = n.tag;
+            r.preview = snip(n.outerHtml);
+            r.friendlyName = deriveFriendlyName(driver, n);
+            r.context = ec;
 
-            // capture state (best-effort)
+            // capture runtime state
             try { r.state = computeElementState(driver, el); } catch (Exception ex) { r.state = new ElementState(); }
 
-            // Build strategies
-            addIfPresent(r, idStrategy(n)); addIfPresent(r, nameStrategy(n)); addIfPresent(r, dataTestStrategy(n));
-            addIfPresent(r, ariaStrategy(n)); addIfPresent(r, placeholderStrategy(n)); addIfPresent(r, labelForStrategy(n));
-            addIfPresent(r, labelNearbyStrategy(n)); addIfPresent(r, textStrategy(n)); addIfPresent(r, classTokensStrategy(n));
-            addIfPresent(r, typeAttrStrategy(n)); addIfPresent(r, roleStrategy(n)); addIfPresent(r, genericAttrCombos(n));
-            addIfPresent(r, lwcStrategies(n)); addIfPresent(r, pegaStrategies(n)); addIfPresent(r, indexFallback(n));
+            // build strategies
+            addIfPresent(r, idStrategy(n));
+            addIfPresent(r, nameStrategy(n));
+            addIfPresent(r, dataTestStrategy(n));
+            addIfPresent(r, ariaStrategy(n));
+            addIfPresent(r, placeholderStrategy(n));
+            addIfPresent(r, labelForStrategy(n));
+            addIfPresent(r, labelNearbyStrategy(n));
+            addIfPresent(r, textStrategy(n));
+            addIfPresent(r, classTokensStrategy(n));
+            addIfPresent(r, typeAttrStrategy(n));
+            addIfPresent(r, roleStrategy(n));
+            addIfPresent(r, genericAttrCombos(n));
+            addIfPresent(r, lwcStrategies(n));
+            addIfPresent(r, pegaStrategies(n));
+            addIfPresent(r, indexFallback(n));
 
-            r.strategies = new ArrayList<>(new LinkedHashSet<>(r.strategies));
+            // dedupe strategies (preserve order)
+            List<String> dedup = new ArrayList<String>();
+            for (String s : r.strategies) {
+                if (s != null && !s.trim().isEmpty() && !dedup.contains(s)) dedup.add(s);
+            }
+            r.strategies = dedup;
+
             if (!r.strategies.isEmpty()) bag.add(r);
         }
 
-        // descend into frames
-        List<WebElement> frames = new ArrayList<>();
+        // find frames and recurse
+        List<WebElement> frames = new ArrayList<WebElement>();
         frames.addAll(driver.findElements(By.tagName("iframe")));
         frames.addAll(driver.findElements(By.tagName("frame")));
 
@@ -152,7 +218,8 @@ public class ElementStrategyCollector {
             FrameCtx fctx = describeFrame(driver, f);
             try {
                 driver.switchTo().frame(f);
-                chain.addLast(fctx); idxPath.addLast(i);
+                chain.addLast(fctx);
+                idxPath.addLast(i);
                 waitDocReady(driver);
                 bag.addAll(collectWithContext(driver, wctx, chain, idxPath));
             } catch (Exception ignored) {
@@ -162,38 +229,46 @@ public class ElementStrategyCollector {
                 if (!idxPath.isEmpty()) idxPath.removeLast();
             }
         }
+
         return bag;
     }
 
-    // ===== Window & frame helpers =====
+    // ========== Window & frame helpers ==========
+
     private static WindowCtx currentWindowCtx(WebDriver driver, int idx, String handle) {
-        WindowCtx w = new WindowCtx(); w.handle = handle; w.index = idx; w.isPopup = idx > 0;
-        try { w.title = String.valueOf(((JavascriptExecutor)driver).executeScript("return document.title")); } catch(Exception e){ w.title=""; }
-        try { w.url   = String.valueOf(((JavascriptExecutor)driver).executeScript("return location.href")); } catch(Exception e){ w.url=""; }
+        WindowCtx w = new WindowCtx();
+        w.handle = handle;
+        w.index = idx;
+        w.isPopup = idx > 0;
+        try { Object t = ((JavascriptExecutor)driver).executeScript("return document.title"); w.title = t == null ? "" : String.valueOf(t); } catch (Exception e) { w.title = ""; }
+        try { Object u = ((JavascriptExecutor)driver).executeScript("return location.href"); w.url = u == null ? "" : String.valueOf(u); } catch (Exception e) { w.url = ""; }
         return w;
     }
+
     private static FrameCtx describeFrame(WebDriver driver, WebElement frameEl) {
         FrameCtx fc = new FrameCtx();
-        try { fc.name  = frameEl.getAttribute("name"); } catch (Exception ignored) {}
-        try { fc.id    = frameEl.getAttribute("id"); } catch (Exception ignored) {}
+        try { fc.name = frameEl.getAttribute("name"); } catch (Exception ignored) {}
+        try { fc.id = frameEl.getAttribute("id"); } catch (Exception ignored) {}
         try { fc.title = frameEl.getAttribute("title"); } catch (Exception ignored) {}
-        try { fc.src   = frameEl.getAttribute("src"); } catch (Exception ignored) {}
+        try { fc.src = frameEl.getAttribute("src"); } catch (Exception ignored) {}
         try {
-            Object ok = ((JavascriptExecutor) driver).executeScript("try{ void window.top.document; return true; }catch(e){ return false; }");
+            Object ok = ((JavascriptExecutor) driver).executeScript("try{ void window.top.document; return true;}catch(e){return false;}");
             fc.crossOrigin = (ok instanceof Boolean) && !((Boolean) ok);
         } catch (Exception e) { fc.crossOrigin = false; }
         return fc;
     }
+
     private static void waitDocReady(WebDriver driver) {
         try {
-            new WebDriverWait(driver, Duration.ofSeconds(5)).until((ExpectedCondition<Boolean>) d -> {
-                try {
-                    String rs = (String) ((JavascriptExecutor) d).executeScript("return document.readyState");
-                    return "complete".equals(rs) || "interactive".equals(rs);
-                } catch (Exception e) { return true; }
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(5));
+            wait.until(new ExpectedCondition<Boolean>() {
+                public Boolean apply(WebDriver d) {
+                    try { Object rs = ((JavascriptExecutor) d).executeScript("return document.readyState"); return "complete".equals(rs) || "interactive".equals(rs); } catch (Exception e) { return true; }
+                }
             });
         } catch (TimeoutException ignored) {}
     }
+
     private static String framePathToString(Deque<Integer> path) {
         if (path == null || path.isEmpty()) return "/";
         StringBuilder sb = new StringBuilder("/");
@@ -202,182 +277,299 @@ public class ElementStrategyCollector {
         return sb.toString();
     }
 
-    // ===== DOM collection (document + open shadow DOM) =====
+    // ========== DOM collection (document + open shadow DOM) ==========
+
+    @SuppressWarnings("unchecked")
     private static List<WebElement> collectInCurrentContext(WebDriver driver) {
         JavascriptExecutor js = (JavascriptExecutor) driver;
         String script =
             "const out=[];" +
             "function pushAll(root){" +
-            "  const all = (root.querySelectorAll ? root.querySelectorAll('*') : []);" +
+            "  const all=(root.querySelectorAll?root.querySelectorAll('*'):[]);" +
             "  out.push(...all);" +
-            "  all.forEach(el=>{ try{ if(el.shadowRoot){ pushAll(el.shadowRoot); } }catch(e){} });" +
+            "  all.forEach(function(el){ try{ if(el.shadowRoot){ pushAll(el.shadowRoot); } }catch(e){} });" +
             "}" +
             "pushAll(document);" +
             "return out;";
         Object result = js.executeScript(script);
-        @SuppressWarnings("unchecked")
-        List<WebElement> elements = (List<WebElement>) result;
-        return elements != null ? elements : Collections.emptyList();
+        if (result instanceof List) {
+            return (List<WebElement>) result;
+        }
+        return new ArrayList<WebElement>();
     }
 
-    // ===== Shadow & Modal detection =====
+    // ========== Shadow & Modal detection ==========
+
     private static boolean isInShadow(WebDriver driver, WebElement el) {
         try {
-            return (Boolean) ((JavascriptExecutor)driver).executeScript(
+            Object r = ((JavascriptExecutor)driver).executeScript(
                 "let e=arguments[0]; while(e){ const rn=e.getRootNode&&e.getRootNode(); if(rn&&rn.host) return true; e=e.parentNode; } return false;", el);
+            return (r instanceof Boolean) && ((Boolean) r);
         } catch (Exception e) { return false; }
     }
+
     private static boolean isInModal(WebDriver driver, WebElement el) {
         try {
-            return (Boolean) ((JavascriptExecutor) driver).executeScript(
+            Object r = ((JavascriptExecutor) driver).executeScript(
                 "let e=arguments[0]; while(e){ if(e.matches && (e.matches('[role=\"dialog\"], [aria-modal=\"true\"], .slds-modal, .slds-dialog, .forceModal, .pzModal, .modal-dialog, [data-ctl=\"Modal\"]'))) return true; e=e.parentElement; } return false;", el);
+            return (r instanceof Boolean) && ((Boolean) r);
         } catch (Exception ex) { return false; }
     }
+
     private static String modalKind(WebDriver driver, WebElement el) {
         try {
             Object kind = ((JavascriptExecutor) driver).executeScript(
                 "let e=arguments[0]; while(e){ if(e.matches){ if(e.matches('.slds-modal, .slds-dialog, .forceModal')) return 'SF LWC modal';" +
                 " if(e.matches('.pzModal, .modal-dialog, [data-ctl=\"Modal\"]')) return 'Pega modal';" +
-                " if(e.matches('[role=\"dialog\"], [aria-modal=\"true\"]')) return 'ARIA dialog'; } e=e.parentElement; } return '';", el);
+                " if(e.matches('[role=\"dialog\"], [aria-modal=\"true\"]')) return 'ARIA dialog'; } e=e.parentElement; } return '';",
+                el);
             return kind == null ? "" : String.valueOf(kind);
         } catch (Exception e1) { return ""; }
     }
 
-    // ===== Strategy builders (generic + LWC + Pega) =====
-    private static void addIfPresent(ElementWithStrategies r, List<String> parts) { if (parts != null) for (String p : parts) if (p != null && !p.isBlank()) r.strategies.add(p); }
+    // ========== Strategy builders (generic + LWC + Pega) ==========
 
-    private static List<String> idStrategy(ElementNode n) { if (isEmpty(n.id)) return null; String css = (n.tag!=null&&!n.tag.isBlank()? n.tag+"#"+n.id : "#"+n.id); return List.of("By.id(\""+n.id+"\")","CSS: "+css,"XPATH: //*[@id='"+esc(n.id)+"']"); }
-    private static List<String> nameStrategy(ElementNode n) { if (isEmpty(n.name)) return null; return List.of("By.name(\""+n.name+"\")","XPATH: //*[@name='"+esc(n.name)+"']"); }
-    private static List<String> dataTestStrategy(ElementNode n) {
-        Map<String,String> m=new LinkedHashMap<>(); putIf(m,"data-test",n.dataTest); putIf(m,"data-testid",n.dataTestid);
-        putIf(m,"data-test-id",n.dataTestId); putIf(m,"data-qa",n.dataQa); putIf(m,"data-cy",n.dataCy);
-        if (m.isEmpty()) return null; List<String> out=new ArrayList<>(); for (var e:m.entrySet()){ out.add("CSS: ["+e.getKey()+"='"+esc(e.getValue())+"']"); out.add("XPATH: //*[@" + e.getKey() + "='" + esc(e.getValue()) + "']"); } return out;
+    private static void addIfPresent(ElementWithStrategies r, List<String> parts) {
+        if (parts == null) return;
+        for (String p : parts) { if (p != null && !p.isEmpty()) r.strategies.add(p); }
     }
-    private static List<String> ariaStrategy(ElementNode n) { if (isEmpty(n.ariaLabel)) return null; return List.of("CSS: [aria-label='"+esc(n.ariaLabel)+"']","XPATH: //*[@aria-label='"+esc(n.ariaLabel)+"']","XPATH (role): //*[@role and @aria-label='"+esc(n.ariaLabel)+"']"); }
-    private static List<String> placeholderStrategy(ElementNode n) { if (isEmpty(n.placeholder)) return null; String tag = nonEmpty(n.tag,"*"); return List.of("CSS: "+tag+"[placeholder='"+esc(n.placeholder)+"']","XPATH: //*[@placeholder='"+esc(n.placeholder)+"']"); }
-    private static List<String> typeAttrStrategy(ElementNode n) { if (isEmpty(n.type) || !"input".equalsIgnoreCase(n.tag)) return null; return List.of("XPATH: //input[@type='"+esc(n.type)+"']"); }
-    private static List<String> labelForStrategy(ElementNode n) {
-        if (!"label".equalsIgnoreCase(n.tag) || isEmpty(n.forId)) return null; String t=norm(n.text);
-        List<String> out=new ArrayList<>(); out.add("XPATH (label→control): //label[@for='"+esc(n.forId)+"']"); out.add("XPATH (control by @for): //*[@id='"+esc(n.forId)+"']"); if (!isEmpty(t)) out.add("XPATH: //label[normalize-space()='"+esc(t)+"']/following::*[@id='"+esc(n.forId)+"'][1]"); return out;
-    }
-    private static List<String> labelNearbyStrategy(ElementNode n) { String label = guessLabelFromNeighbors(n); if (isEmpty(label)) return null; String tag=nonEmpty(n.tag,"*"); return List.of("XPATH (label-nearby): //label[normalize-space()='"+esc(label)+"']/following::"+tag+"[1]"); }
-    private static List<String> textStrategy(ElementNode n) { String t=norm(n.text); if (isEmpty(t) || !isLikelyTextual(n.tag)) return null; String tag=nonEmpty(n.tag,"*"); return List.of("XPATH (text): //"+tag+"[normalize-space()='"+esc(t)+"']","XPATH (text-contains): //"+tag+"[contains(normalize-space(),'"+esc(t)+"')]"); }
-    private static List<String> classTokensStrategy(ElementNode n) {
-        if (isEmpty(n.cls)) return null; String[] toks=n.cls.trim().split("\\s+"); List<String> good=new ArrayList<>();
-        for(String tok:toks) if (tok.length()>=3 && !isProbablyDynamic(tok)) good.add(tok);
-        if (good.isEmpty()) return null; String tag=nonEmpty(n.tag,"*"); List<String> out=new ArrayList<>();
-        for (String g:good){ out.add("CSS: "+tag+"."+g); out.add("XPATH: //"+tag+"[contains(concat(' ',normalize-space(@class),' '),' "+g+" ')]"); }
-        if (good.size()>=2){ String a=good.get(0), b=good.get(1); out.add("XPATH (class pair): //"+tag+"[contains(@class,'"+a+"') and contains(@class,'"+b+"')]"); }
+
+    private static List<String> idStrategy(ElementNode n) {
+        if (isEmpty(n.id)) return null;
+        String css = (n.tag != null && !n.tag.isEmpty() ? n.tag + "#" + n.id : "#" + n.id);
+        List<String> out = new ArrayList<String>();
+        out.add("By.id(\"" + n.id + "\")");
+        out.add("CSS: " + css);
+        out.add("XPATH: //*[@id='" + esc(n.id) + "']");
         return out;
     }
-    private static List<String> roleStrategy(ElementNode n) { if (isEmpty(n.role)) return null; List<String> out=new ArrayList<>(); out.add("XPATH (role): //*[@role='"+esc(n.role)+"']"); if (!isEmpty(n.ariaLabel)) out.add("XPATH (role+aria): //*[@role='"+esc(n.role)+"' and @aria-label='"+esc(n.ariaLabel)+"']"); return out; }
 
-    // Salesforce LWC specifics
+    private static List<String> nameStrategy(ElementNode n) {
+        if (isEmpty(n.name)) return null;
+        List<String> out = new ArrayList<String>();
+        out.add("By.name(\"" + n.name + "\")");
+        out.add("XPATH: //*[@name='" + esc(n.name) + "']");
+        return out;
+    }
+
+    private static List<String> dataTestStrategy(ElementNode n) {
+        Map<String,String> m = new LinkedHashMap<String,String>();
+        putIf(m,"data-test",n.dataTest);
+        putIf(m,"data-testid",n.dataTestid);
+        putIf(m,"data-test-id",n.dataTestId);
+        putIf(m,"data-qa",n.dataQa);
+        putIf(m,"data-cy",n.dataCy);
+        if (m.isEmpty()) return null;
+        List<String> out = new ArrayList<String>();
+        for (Map.Entry<String,String> e : m.entrySet()) {
+            out.add("CSS: [" + e.getKey() + "='" + esc(e.getValue()) + "']");
+            out.add("XPATH: //*[@" + e.getKey() + "='" + esc(e.getValue()) + "']");
+        }
+        return out;
+    }
+
+    private static List<String> ariaStrategy(ElementNode n) {
+        if (isEmpty(n.ariaLabel)) return null;
+        List<String> out = new ArrayList<String>();
+        out.add("CSS: [aria-label='" + esc(n.ariaLabel) + "']");
+        out.add("XPATH: //*[@aria-label='" + esc(n.ariaLabel) + "']");
+        out.add("XPATH (role): //*[@role and @aria-label='" + esc(n.ariaLabel) + "']");
+        return out;
+    }
+
+    private static List<String> placeholderStrategy(ElementNode n) {
+        if (isEmpty(n.placeholder)) return null;
+        String tag = nonEmpty(n.tag, "*");
+        List<String> out = new ArrayList<String>();
+        out.add("CSS: " + tag + "[placeholder='" + esc(n.placeholder) + "']");
+        out.add("XPATH: //*[@placeholder='" + esc(n.placeholder) + "']");
+        return out;
+    }
+
+    private static List<String> typeAttrStrategy(ElementNode n) {
+        if (isEmpty(n.type) || !"input".equalsIgnoreCase(n.tag)) return null;
+        List<String> out = new ArrayList<String>();
+        out.add("XPATH: //input[@type='" + esc(n.type) + "']");
+        return out;
+    }
+
+    private static List<String> labelForStrategy(ElementNode n) {
+        if (!"label".equalsIgnoreCase(n.tag) || isEmpty(n.forId)) return null;
+        String t = norm(n.text);
+        List<String> out = new ArrayList<String>();
+        out.add("XPATH (label→control): //label[@for='" + esc(n.forId) + "']");
+        out.add("XPATH (control by @for): //*[@id='" + esc(n.forId) + "']");
+        if (!isEmpty(t)) out.add("XPATH: //label[normalize-space()='" + esc(t) + "']/following::*[@id='" + esc(n.forId) + "'][1]");
+        return out;
+    }
+
+    private static List<String> labelNearbyStrategy(ElementNode n) {
+        String label = guessLabelFromNeighbors(n);
+        if (isEmpty(label)) return null;
+        String tag = nonEmpty(n.tag, "*");
+        return Arrays.asList("XPATH (label-nearby): //label[normalize-space()='" + esc(label) + "']/following::" + tag + "[1]");
+    }
+
+    private static List<String> textStrategy(ElementNode n) {
+        String t = norm(n.text);
+        if (isEmpty(t) || !isLikelyTextual(n.tag)) return null;
+        String tag = nonEmpty(n.tag, "*");
+        List<String> out = new ArrayList<String>();
+        out.add("XPATH (text): //" + tag + "[normalize-space()='" + esc(t) + "']");
+        out.add("XPATH (text-contains): //" + tag + "[contains(normalize-space(),'" + esc(t) + "')]");
+        return out;
+    }
+
+    private static List<String> classTokensStrategy(ElementNode n) {
+        if (isEmpty(n.cls)) return null;
+        String[] toks = n.cls.trim().split("\\s+");
+        List<String> good = new ArrayList<String>();
+        for (String tok : toks) if (tok.length() >= 3 && !isProbablyDynamic(tok)) good.add(tok);
+        if (good.isEmpty()) return null;
+        String tag = nonEmpty(n.tag, "*");
+        List<String> out = new ArrayList<String>();
+        for (String g : good) {
+            out.add("CSS: " + tag + "." + g);
+            out.add("XPATH: //" + tag + "[contains(concat(' ',normalize-space(@class),' '),' " + g + " ')]");
+        }
+        if (good.size() >= 2) out.add("XPATH (class pair): //" + tag + "[contains(@class,'" + good.get(0) + "') and contains(@class,'" + good.get(1) + "')]");
+        return out;
+    }
+
+    private static List<String> roleStrategy(ElementNode n) {
+        if (isEmpty(n.role)) return null;
+        List<String> out = new ArrayList<String>();
+        out.add("XPATH (role): //*[@role='" + esc(n.role) + "']");
+        if (!isEmpty(n.ariaLabel)) out.add("XPATH (role+aria): //*[@role='" + esc(n.role) + "' and @aria-label='" + esc(n.ariaLabel) + "']");
+        return out;
+    }
+
+    // ========== Salesforce LWC specifics ==========
+
     private static List<String> lwcStrategies(ElementNode n) {
-        List<String> out=new ArrayList<>(); String tag=nonEmpty(n.tag,"*"), text=norm(n.text), aria=norm(n.ariaLabel), placeholder=norm(n.placeholder), cls=nonEmpty(n.cls,"");
+        List<String> out = new ArrayList<String>();
+        String tag = nonEmpty(n.tag, "*");
+        String text = norm(n.text);
+        String aria = norm(n.ariaLabel);
+        String placeholder = norm(n.placeholder);
+        String cls = nonEmpty(n.cls, "");
         boolean looksSLDS = cls.contains("slds-") || cls.contains("force-") || cls.contains("lds-");
         boolean isComboboxRole = "combobox".equalsIgnoreCase(n.role);
         boolean isGridCellRole = "gridcell".equalsIgnoreCase(n.role) || "row".equalsIgnoreCase(n.role);
 
-        if (!isEmpty(n.dataField)){ out.add("CSS (LWC): [data-field='"+esc(n.dataField)+"']"); out.add("XPATH (LWC): //*[@data-field='"+esc(n.dataField)+"']"); }
-        if (!isEmpty(n.dataRecordId)){ out.add("XPATH (LWC): //*[@data-recordid='"+esc(n.dataRecordId)+"']"); }
+        if (!isEmpty(n.dataField)) { out.add("CSS (LWC): [data-field='" + esc(n.dataField) + "']"); out.add("XPATH (LWC): //*[@data-field='" + esc(n.dataField) + "']"); }
+        if (!isEmpty(n.dataRecordId)) out.add("XPATH (LWC): //*[@data-recordid='" + esc(n.dataRecordId) + "']");
         if (looksSLDS) {
             if (!isEmpty(text) && "label".equalsIgnoreCase(tag))
-                out.add("XPATH (SLDS label→control): //label[contains(@class,'slds-form-element__label')][normalize-space()='"+esc(text)+"']/following::*[self::input or self::textarea or self::select][1]");
-            String lab = guessLabelFromNeighbors(n);
-            if (!isEmpty(lab)) out.add("XPATH (SLDS control by label): //*[contains(@class,'slds-form-element')][.//label[normalize-space()='"+esc(lab)+"']]//*[self::input or self::textarea or self::select][1]");
+                out.add("XPATH (SLDS label→control): //label[contains(@class,'slds-form-element__label')][normalize-space()='" + esc(text) + "']/following::*[self::input or self::textarea or self::select][1]");
+            String lab = guessLabelFromNeighbors(n); if (!isEmpty(lab)) out.add("XPATH (SLDS control by label): //*[contains(@class,'slds-form-element')][.//label[normalize-space()='" + esc(lab) + "']]//*[self::input or self::textarea or self::select][1]");
         }
         if (isComboboxRole) {
-            if (!isEmpty(aria)) out.add("XPATH (combobox aria): //*[@role='combobox' and @aria-label='"+esc(aria)+"']");
-            if (!isEmpty(placeholder)) out.add("XPATH (combobox placeholder): //*[@role='combobox' and @placeholder='"+esc(placeholder)+"']");
+            if (!isEmpty(aria)) out.add("XPATH (combobox aria): //*[@role='combobox' and @aria-label='" + esc(aria) + "']");
+            if (!isEmpty(placeholder)) out.add("XPATH (combobox placeholder): //*[@role='combobox' and @placeholder='" + esc(placeholder) + "']");
             out.add("XPATH (option template): //*[@role='option' and normalize-space()='OPTION_TEXT']");
         }
         if (!isEmpty(n.dataLabel)) {
-            out.add("XPATH (datatable cell): //*[@data-label='"+esc(n.dataLabel)+"']");
-            out.add("XPATH (datatable col): //table[contains(@class,'slds-table')]//*[self::th or self::td][@data-label='"+esc(n.dataLabel)+"']");
+            out.add("XPATH (datatable cell): //*[@data-label='" + esc(n.dataLabel) + "']");
+            out.add("XPATH (datatable col): //table[contains(@class,'slds-table')]//*[self::th or self::td][@data-label='" + esc(n.dataLabel) + "']");
         }
         if (isGridCellRole) {
             out.add("XPATH (grid role): //*[@role='gridcell' or @role='row']");
-            if (!isEmpty(n.dataLabel)) out.add("XPATH (grid cell by label): //*[@role='gridcell' and @data-label='"+esc(n.dataLabel)+"']");
+            if (!isEmpty(n.dataLabel)) out.add("XPATH (grid cell by label): //*[@role='gridcell' and @data-label='" + esc(n.dataLabel) + "']");
         }
         if ("button".equalsIgnoreCase(tag) && looksSLDS) {
-            if (!isEmpty(text)) out.add("XPATH (SLDS button): //button[contains(@class,'slds-button')][normalize-space()='"+esc(text)+"']");
+            if (!isEmpty(text)) out.add("XPATH (SLDS button): //button[contains(@class,'slds-button')][normalize-space()='" + esc(text) + "']");
             out.add("XPATH (SLDS hasmenu): //button[contains(@class,'slds-button') and @aria-haspopup='menu']");
         }
-        return out.isEmpty()?null:out;
+        return out.isEmpty() ? null : out;
     }
 
-    // Pega specifics
+    // ========== Pega specifics ==========
+
     private static List<String> pegaStrategies(ElementNode n) {
-        List<String> out=new ArrayList<>(); String text=norm(n.text);
-        if (!isEmpty(n.dataTestId)){ out.add("CSS (Pega): [data-test-id='"+esc(n.dataTestId)+"']"); out.add("XPATH (Pega): //*[@data-test-id='"+esc(n.dataTestId)+"']"); }
-        if (!isEmpty(n.dataCtl)){
-            out.add("XPATH (Pega ctl): //*[@data-ctl='"+esc(n.dataCtl)+"']");
+        List<String> out = new ArrayList<String>();
+        String text = norm(n.text);
+        if (!isEmpty(n.dataTestId)) { out.add("CSS (Pega): [data-test-id='" + esc(n.dataTestId) + "']"); out.add("XPATH (Pega): //*[@data-test-id='" + esc(n.dataTestId) + "']"); }
+        if (!isEmpty(n.dataCtl)) {
+            out.add("XPATH (Pega ctl): //*[@data-ctl='" + esc(n.dataCtl) + "']");
             if ("TextInput".equalsIgnoreCase(n.dataCtl)) out.add("XPATH (Pega TextInput→input): //*[@data-ctl='TextInput']//input");
-            if ("Dropdown".equalsIgnoreCase(n.dataCtl)){ out.add("XPATH (Pega Dropdown): //*[@data-ctl='Dropdown']//*[@role='combobox' or self::select]"); out.add("XPATH (Pega option): //ul[@role='listbox']//*[@role='option' and normalize-space()='OPTION_TEXT']"); }
+            if ("Dropdown".equalsIgnoreCase(n.dataCtl)) { out.add("XPATH (Pega Dropdown): //*[@data-ctl='Dropdown']//*[@role='combobox' or self::select]"); out.add("XPATH (Pega option): //ul[@role='listbox']//*[@role='option' and normalize-space()='OPTION_TEXT']"); }
             if ("DateTime".equalsIgnoreCase(n.dataCtl)) out.add("XPATH (Pega DateTime): //*[@data-ctl='DateTime']//input");
-            if ("Button".equalsIgnoreCase(n.dataCtl) && !isEmpty(text)) out.add("XPATH (Pega Button by text): //*[@data-ctl='Button'][.//text()[normalize-space()='"+esc(text)+"']]");
+            if ("Button".equalsIgnoreCase(n.dataCtl) && !isEmpty(text)) out.add("XPATH (Pega Button by text): //*[@data-ctl='Button'][.//text()[normalize-space()='" + esc(text) + "']]");
         }
-        String labelTxt = guessLabelFromNeighbors(n); if (!isEmpty(labelTxt)) out.add("XPATH (Pega label→control): //label[normalize-space()='"+esc(labelTxt)+"']/following::*[self::input or self::textarea or self::select][1]");
+        String labelTxt = guessLabelFromNeighbors(n);
+        if (!isEmpty(labelTxt)) out.add("XPATH (Pega label→control): //label[normalize-space()='" + esc(labelTxt) + "']/following::*[self::input or self::textarea or self::select][1]");
         out.add("XPATH (Pega gadget iframe): //iframe[contains(@name,'PegaGadget') or contains(@id,'PegaGadget') or contains(@title,'Pega')]");
-        return out.isEmpty()?null:out;
+        return out.isEmpty() ? null : out;
     }
 
     private static List<String> genericAttrCombos(ElementNode n) {
-        Map<String,String> attrs=new LinkedHashMap<>();
+        Map<String,String> attrs = new LinkedHashMap<String,String>();
         putIf(attrs,"id",n.id); putIf(attrs,"name",n.name); putIf(attrs,"type",n.type);
         putIf(attrs,"placeholder",n.placeholder); putIf(attrs,"title",n.title); putIf(attrs,"aria-label",n.ariaLabel);
         putIf(attrs,"data-test",n.dataTest); putIf(attrs,"data-testid",n.dataTestid); putIf(attrs,"data-test-id",n.dataTestId);
         putIf(attrs,"data-qa",n.dataQa); putIf(attrs,"data-cy",n.dataCy);
 
-        List<String> res=new ArrayList<>(); String tag=nonEmpty(n.tag,"*");
-        for (var e:attrs.entrySet()) res.add("XPATH: //"+tag+"[@"+e.getKey()+"='"+esc(e.getValue())+"']");
-        if (attrs.size()>=2){
+        List<String> res = new ArrayList<String>();
+        String tag = nonEmpty(n.tag, "*");
+        for (Map.Entry<String,String> e : attrs.entrySet()) res.add("XPATH: //"+tag+"[@"+e.getKey()+"='"+esc(e.getValue())+"']");
+        if (attrs.size() >= 2) {
             Iterator<Map.Entry<String,String>> it = attrs.entrySet().iterator();
-            var a=it.next(), b=it.next();
+            Map.Entry<String,String> a = it.next();
+            Map.Entry<String,String> b = it.next();
             res.add("XPATH (attr pair): //"+tag+"[@"+a.getKey()+"='"+esc(a.getValue())+"' and @"+b.getKey()+"='"+esc(b.getValue())+"']");
         }
-        return res.isEmpty()?null:res;
+        return res.isEmpty() ? null : res;
     }
-    private static List<String> indexFallback(ElementNode n) { if (isEmpty(n.tag)) return null; return List.of("XPATH (index fallback): (//"+n.tag+")[POSITION]"); }
 
-    // ===== Friendly names & heuristics =====
+    private static List<String> indexFallback(ElementNode n) {
+        if (isEmpty(n.tag)) return null;
+        return Arrays.asList("XPATH (index fallback): (//"+n.tag+")[POSITION]");
+    }
+
+    // ========== Friendly names & heuristics ==========
+
     private static String deriveFriendlyName(WebDriver driver, ElementNode n) {
         String lab = firstNonEmpty(norm(n.ariaLabel), norm(n.placeholder), norm(n.title));
         if (!isEmpty(lab)) return lab;
-        if (!isEmpty(n.forId) && "label".equalsIgnoreCase(n.tag)) { String t=norm(n.text); if (!isEmpty(t)) return t; }
+        if (!isEmpty(n.forId) && "label".equalsIgnoreCase(n.tag)) {
+            String t = norm(n.text); if (!isEmpty(t)) return t;
+        }
         String near = guessLabelFromNeighbors(n); if (!isEmpty(near)) return near;
-        String txt = norm(n.text); if (!isEmpty(txt) && txt.length()<=40) return txt;
-        String idOrName = firstNonEmpty(n.id,n.name); if (!isEmpty(idOrName)) return idOrName;
-        return n.tag!=null? n.tag : "element";
+        String txt = norm(n.text); if (!isEmpty(txt) && txt.length() <= 40) return txt;
+        String idOrName = firstNonEmpty(n.id, n.name); if (!isEmpty(idOrName)) return idOrName;
+        return n.tag != null ? n.tag : "element";
     }
+
     private static String guessLabelFromNeighbors(ElementNode n) {
         if (isEmpty(n.outerHtml)) return null;
         if (!isEmpty(n.placeholder) || !isEmpty(n.ariaLabel) || !isEmpty(n.title)) return null;
-        String html=n.outerHtml;
-        Pattern p=Pattern.compile("<label[^>]*>(.*?)</label>",Pattern.CASE_INSENSITIVE|Pattern.DOTALL|Pattern.UNICODE_CASE);
-        var m=p.matcher(html); if (m.find()){ String raw=m.group(1).replaceAll("<.*?>","").trim(); if (!raw.isEmpty() && raw.length()<=60) return raw; }
+        String html = n.outerHtml;
+        Pattern p = Pattern.compile("<label[^>]*>(.*?)</label>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL | Pattern.UNICODE_CASE);
+        java.util.regex.Matcher m = p.matcher(html);
+        if (m.find()) {
+            String raw = m.group(1).replaceAll("<.*?>", "").trim();
+            if (!raw.isEmpty() && raw.length() <= 60) return raw;
+        }
         return null;
     }
 
-    // ===== Element state computation =====
+    // ========== Element state computation ==========
+
     private static ElementState computeElementState(WebDriver driver, WebElement el) {
         ElementState s = new ElementState();
         try {
-            // Selenium checks (best effort)
             try { s.isDisplayed = el.isDisplayed(); } catch (Exception ignored) { s.isDisplayed = false; }
             try { s.isEnabled = el.isEnabled(); } catch (Exception ignored) { s.isEnabled = false; }
             try { s.isSelected = el.isSelected(); } catch (Exception ignored) { s.isSelected = false; }
 
-            // Attribute-based
             try { s.isDisabledAttr = el.getAttribute("disabled") != null && !el.getAttribute("disabled").isEmpty(); } catch (Exception ignored) {}
             try { s.ariaDisabled = el.getAttribute("aria-disabled") != null && !el.getAttribute("aria-disabled").isEmpty(); } catch (Exception ignored) {}
             try { s.isReadOnly = el.getAttribute("readonly") != null; } catch (Exception ignored) {}
             try { s.isHiddenAttr = el.getAttribute("hidden") != null; } catch (Exception ignored) {}
-            try { s.isChecked = "true".equalsIgnoreCase(String.valueOf(el.getAttribute("checked"))) || Boolean.TRUE.equals(el.getAttribute("checked")); } catch (Exception ignored) {}
+            try { s.isChecked = "true".equalsIgnoreCase(String.valueOf(el.getAttribute("checked"))); } catch (Exception ignored) {}
             try { s.tabIndex = el.getAttribute("tabindex") == null ? "" : el.getAttribute("tabindex"); } catch (Exception ignored) {}
 
-            // JS computed probe
             Map<String,Object> map = computeStateWithJs(driver, el);
             if (map != null && !map.isEmpty()) {
                 Object d = map.get("display"); if (d != null) s.computedDisplay = String.valueOf(d);
@@ -388,22 +580,21 @@ public class ElementStrategyCollector {
                 Object ariaH = map.get("ariaHidden"); if (ariaH != null && !"".equals(String.valueOf(ariaH))) s.visibilityReason = "aria-hidden=" + String.valueOf(ariaH);
                 if ("none".equalsIgnoreCase(s.computedDisplay)) s.visibilityReason = "display:none";
                 if ("hidden".equalsIgnoreCase(s.computedVisibility)) s.visibilityReason = "visibility:hidden";
-                if (hasSize != null && !(Boolean) hasSize) s.visibilityReason = s.visibilityReason.isBlank() ? "zero-size" : s.visibilityReason + ";zero-size";
+                if (hasSize != null && !(Boolean) hasSize) s.visibilityReason = s.visibilityReason.isEmpty() ? "zero-size" : s.visibilityReason + ";zero-size";
 
-                Object disabledAttr = map.get("disabledAttr"); if (disabledAttr!=null && Boolean.parseBoolean(String.valueOf(disabledAttr))) s.isDisabledAttr = true;
-                Object ariaDisabled = map.get("ariaDisabled"); if (ariaDisabled!=null && !"".equals(String.valueOf(ariaDisabled))) s.ariaDisabled = true;
-                Object readonlyAttr = map.get("readonlyAttr"); if (readonlyAttr!=null && Boolean.parseBoolean(String.valueOf(readonlyAttr))) s.isReadOnly = true;
-                Object checked = map.get("checked"); if (checked!=null) s.isChecked = Boolean.parseBoolean(String.valueOf(checked));
-                Object selected = map.get("selected"); if (selected!=null) s.isSelected = Boolean.parseBoolean(String.valueOf(selected));
-                Object tabindex = map.get("tabindex"); if (tabindex!=null) s.tabIndex = String.valueOf(tabindex);
+                Object disabledAttr = map.get("disabledAttr"); if (disabledAttr != null && Boolean.parseBoolean(String.valueOf(disabledAttr))) s.isDisabledAttr = true;
+                Object ariaDisabled = map.get("ariaDisabled"); if (ariaDisabled != null && !"".equals(String.valueOf(ariaDisabled))) s.ariaDisabled = true;
+                Object readonlyAttr = map.get("readonlyAttr"); if (readonlyAttr != null && Boolean.parseBoolean(String.valueOf(readonlyAttr))) s.isReadOnly = true;
+                Object checked = map.get("checked"); if (checked != null) s.isChecked = Boolean.parseBoolean(String.valueOf(checked));
+                Object selected = map.get("selected"); if (selected != null) s.isSelected = Boolean.parseBoolean(String.valueOf(selected));
+                Object tabindex = map.get("tabindex"); if (tabindex != null) s.tabIndex = String.valueOf(tabindex);
             }
         } catch (Exception e) {
-            // swallow - best effort
+            // best-effort; swallow
         }
         return s;
     }
 
-    // JS probe - returns a JS object mapped as Map<String,Object>
     @SuppressWarnings("unchecked")
     private static Map<String,Object> computeStateWithJs(WebDriver driver, WebElement element) {
         try {
@@ -411,11 +602,11 @@ public class ElementStrategyCollector {
             Object result = js.executeScript(
                 "const el=arguments[0];" +
                 "function probe(e){ try{" +
-                "  const style = window.getComputedStyle(e);" +
-                "  const rect = e.getBoundingClientRect();" +
-                "  const visibleByCss = style && style.display!=='none' && style.visibility!=='hidden' && parseFloat(style.opacity||1) > 0;" +
-                "  const hasSize = rect && rect.width>0 && rect.height>0;" +
-                "  const closestAria = (e.closest && e.closest('[aria-hidden]'))? e.closest('[aria-hidden]').getAttribute('aria-hidden') : (e.getAttribute('aria-hidden')||'');" +
+                "  const style=window.getComputedStyle(e);" +
+                "  const rect=e.getBoundingClientRect();" +
+                "  const visibleByCss=style && style.display!=='none' && style.visibility!=='hidden' && parseFloat(style.opacity||1)>0;" +
+                "  const hasSize=rect && rect.width>0 && rect.height>0;" +
+                "  const closestAria=(e.closest && e.closest('[aria-hidden]'))? e.closest('[aria-hidden]').getAttribute('aria-hidden') : (e.getAttribute('aria-hidden')||'');" +
                 "  return {" +
                 "    display: style ? style.display : ''," +
                 "    visibility: style ? style.visibility : ''," +
@@ -427,35 +618,42 @@ public class ElementStrategyCollector {
                 "    ariaDisabled: e.getAttribute('aria-disabled')||''," +
                 "    hiddenAttr: e.hasAttribute('hidden')," +
                 "    readonlyAttr: e.hasAttribute('readonly')," +
-                "    checked: (e.checked===true) || false," +
-                "    selected: (e.selected===true) || false," +
+                "    checked: (e.checked===true)||false," +
+                "    selected: (e.selected===true)||false," +
                 "    tabindex: e.getAttribute('tabindex')||''" +
                 "  };" +
                 "}catch(err){ return {display:'',visibility:'',opacity:'',visibleByCss:false,hasSize:false,ariaHidden:'',disabledAttr:false,ariaDisabled:'',hiddenAttr:false,readonlyAttr:false,checked:false,selected:false,tabindex:''}; }} return probe(el);",
                 element);
-            if (result instanceof Map) {
-                return (Map<String,Object>) result;
-            } else if (result instanceof org.openqa.selenium.remote.RemoteWebElement) {
-                return Collections.emptyMap();
-            } else {
-                // Selenium often returns LinkedHashMap
-                return (Map<String,Object>) result;
-            }
+            if (result instanceof Map) return (Map<String,Object>) result;
+            return new HashMap<String,Object>();
         } catch (Exception e) {
-            return Collections.emptyMap();
+            return new HashMap<String,Object>();
         }
     }
 
-    // ===== Export with context & state =====
+    // ========== Export Markdown ==========
+
     private static void exportPrettyWithContext(List<ElementWithStrategies> items, String outPath) throws IOException {
-        File out = new File(outPath); if (out.getParentFile()!=null) out.getParentFile().mkdirs();
-        items.sort(Comparator.comparing((ElementWithStrategies e) -> e.context.window.index)
-                .thenComparing(e -> e.framePath)
-                .thenComparing(e -> e.friendlyName == null ? "" : e.friendlyName.toLowerCase()));
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(out), StandardCharsets.UTF_8)) {
+        File out = new File(outPath); if (out.getParentFile() != null) out.getParentFile().mkdirs();
+
+        Collections.sort(items, new Comparator<ElementWithStrategies>() {
+            public int compare(ElementWithStrategies a, ElementWithStrategies b) {
+                int c = Integer.valueOf(a.context.window.index).compareTo(Integer.valueOf(b.context.window.index));
+                if (c != 0) return c;
+                c = a.framePath.compareTo(b.framePath);
+                if (c != 0) return c;
+                String an = a.friendlyName == null ? "" : a.friendlyName.toLowerCase();
+                String bn = b.friendlyName == null ? "" : b.friendlyName.toLowerCase();
+                return an.compareTo(bn);
+            }
+        });
+
+        Writer w = new OutputStreamWriter(new FileOutputStream(out), StandardCharsets.UTF_8);
+        try {
             int currentWin = Integer.MIN_VALUE; String currentFrame = null;
             w.write("# Element Strategies Export\n\n");
             w.write("_Generated: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()) + "_\n\n");
+
             for (ElementWithStrategies e : items) {
                 if (e.context.window.index != currentWin) {
                     currentWin = e.context.window.index; currentFrame = null;
@@ -468,11 +666,9 @@ public class ElementStrategyCollector {
                     currentFrame = e.framePath; w.write("\n### Frame " + e.framePath + "\n");
                     if (e.context.frameChain.isEmpty()) w.write("- (top document)\n\n");
                     else {
-                        w.write("- Chain:\n");
-                        int lvl=0; for (FrameCtx fc : e.context.frameChain) {
-                            w.write("  - [" + (lvl++) + "] name=" + safeText(fc.name) +
-                                    " id=" + safeText(fc.id) + " title=" + safeText(fc.title) +
-                                    " src~=" + safeText(shorten(fc.src)) + (fc.crossOrigin ? " (cross-origin)" : "") + "\n");
+                        w.write("- Chain:\n"); int lvl = 0;
+                        for (FrameCtx fc : e.context.frameChain) {
+                            w.write("  - [" + (lvl++) + "] name=" + safeText(fc.name) + " id=" + safeText(fc.id) + " title=" + safeText(fc.title) + " src~=" + safeText(shorten(fc.src)) + (fc.crossOrigin ? " (cross-origin)" : "") + "\n");
                         }
                         w.write("\n");
                     }
@@ -484,175 +680,136 @@ public class ElementStrategyCollector {
                 if (e.context.inModal) w.write("`in:modal` (" + safeText(e.context.modalKind) + ") ");
                 w.write("  \n");
 
-                // state printout
                 if (e.state != null) {
-                    List<String> st = new ArrayList<>();
+                    List<String> st = new ArrayList<String>();
                     st.add(e.state.computedVisible ? "visible" : "hidden");
                     st.add(e.state.isEnabled ? "enabled" : "disabled");
                     if (e.state.isReadOnly) st.add("readonly");
                     if (e.state.isChecked) st.add("checked");
                     if (e.state.isSelected) st.add("selected");
-                    if (!e.state.tabIndex.isBlank()) st.add("tabIndex=" + e.state.tabIndex);
-                    w.write("- state: " + String.join(", ", st) + "  \n");
-                    if (!e.state.visibilityReason.isBlank()) w.write("  - visibilityReason: " + e.state.visibilityReason + "  \n");
-                    if (!e.state.computedDisplay.isBlank()) w.write("  - computed.display: " + e.state.computedDisplay + "  \n");
-                    if (!e.state.computedVisibility.isBlank()) w.write("  - computed.visibility: " + e.state.computedVisibility + "  \n");
-                    if (!e.state.computedOpacity.isBlank()) w.write("  - computed.opacity: " + e.state.computedOpacity + "  \n");
+                    if (!e.state.tabIndex.isEmpty()) st.add("tabIndex=" + e.state.tabIndex);
+                    w.write("- state: " + join(st, ", ") + "  \n");
+                    if (!e.state.visibilityReason.isEmpty()) w.write("  - visibilityReason: " + e.state.visibilityReason + "  \n");
+                    if (!e.state.computedDisplay.isEmpty()) w.write("  - computed.display: " + e.state.computedDisplay + "  \n");
+                    if (!e.state.computedVisibility.isEmpty()) w.write("  - computed.visibility: " + e.state.computedVisibility + "  \n");
+                    if (!e.state.computedOpacity.isEmpty()) w.write("  - computed.opacity: " + e.state.computedOpacity + "  \n");
                 }
 
                 for (String s : e.strategies) w.write("• " + s + "  \n");
                 if (!isEmpty(e.preview)) w.write("`" + e.preview + "`\n");
                 w.write("\n");
             }
+        } finally {
+            try { w.close(); } catch (IOException ignored) {}
         }
     }
 
-    // ===== small utils =====
-    private static String attr(WebElement el, String name){ try{ String v = el.getAttribute(name); return v==null? "": v; } catch (Exception e){ return ""; } }
-    private interface SupplierWithThrow<T>{ T get() throws Exception; }
-    private static String safe(SupplierWithThrow<String> sup){ try { String v=sup.get(); return v==null? "": v; } catch (Exception e) { return ""; } }
-    private static boolean isEmpty(String s){ return s==null || s.isBlank(); }
-    private static String nonEmpty(String s,String def){ return isEmpty(s)? def : s; }
-    private static void putIf(Map<String,String> m,String k,String v){ if(!isEmpty(v)) m.put(k,v); }
-    private static String firstNonEmpty(String... vals){ for (String v: vals) if (!isEmpty(v)) return v; return null; }
-    private static String esc(String s){ return s == null ? "" : s.replace("'", "\\'"); }
-    private static String snip(String s){ if (isEmpty(s)) return ""; s = s.replaceAll("\\s+", " ").trim(); return s.length()>200? s.substring(0,200) + "..." : s; }
-    private static String norm(String s){ return isEmpty(s)? "": s.trim().replaceAll("\\s+"," "); }
-    private static boolean isLikelyTextual(String tag){ if (tag==null) return false; String t=tag.toLowerCase(Locale.ROOT); return t.equals("button")||t.equals("a")||t.equals("span")||t.equals("div"); }
-    private static boolean isProbablyDynamic(String clsTok){ return clsTok.matches(".*\\d.*") && clsTok.length() > 12; }
-    private static String safeText(String s){ return s == null ? "" : s.replace("\n"," ").replace("\r"," ").trim(); }
-    private static String shorten(String s){ if (s==null) return ""; s = s.trim(); return s.length()>80? s.substring(0,80)+"…" : s; }
-}
+    // ========== Export CSV (flat rows) ==========
 
-
-///// hooks ///////
-
-
-
-
-package hooks; // adjust to your package if different
-
-import io.cucumber.java.After;
-import io.cucumber.java.AfterStep;
-import io.cucumber.java.Before;
-import io.cucumber.java.Scenario;
-import org.openqa.selenium.WebDriver;
-import util.AuditSampler;
-import util.AuditCheckpoints;
-import util.ElementStrategyCollector;
-import java.io.File;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-
-/**
- * Hooks - updated to integrate ElementStrategyCollector + sampler + keepBrowserOpen flag
- *
- * Adjust imports and types (DriverFactory, WebBrowser, BasePage, ScenarioContext) to match your project.
- */
-public class Hooks {
-
-    // your existing members (from screenshot)
-    BasePage page;
-    ScenarioContext context;
-    private WebDriver driver;
-
-    // Add audit/sampler fields
-    private AuditSampler sampler;
-    // default export dir (override with -Daudit.outDir=...)
-    private final String auditOutDir = System.getProperty("audit.outDir", "C:/Automation/Exports");
-    private final long defaultSamplerMs = Long.parseLong(System.getProperty("audit.everyMs", "2000"));
-
-    // ==== existing setup ====
-    @Before
-    public void setUp(Scenario scenario) {
-        // preserve your original driver initialization
-        driver = DriverFactory.getDriver(WebBrowser.CHROME);
-        page = new BasePage(driver);
-        context = new ScenarioContext();
-
-        // Optionally decorate or prepare anything else here
-    }
-
-    // ==== existing end ====
-    @After
-    public void end(Scenario scenario) {
-        // your existing teardown logic (kept intentionally minimal)
-        // don't quit here if you want to keep browser open; handled in maybeQuit()
-    }
-
-    // ==== screenshot on failure (keep this as you had it) ====
-    @AfterStep
-    public void tearDown(Scenario scenario) {
-        if (scenario.isFailed()) {
-            try {
-                // take screenshot and attach - you used TakesScreenshot in screenshot code before
-                final byte[] screenshot = ((org.openqa.selenium.TakesScreenshot) driver)
-                        .getScreenshotAs(org.openqa.selenium.OutputType.BYTES);
-
-                // attach to cucumber report (if your runner supports it)
-                scenario.attach(screenshot, "image/png", scenario.getName());
-            } catch (Exception e) {
-                System.err.println("Failed to capture screenshot: " + e.getMessage());
-            }
-        }
-    }
-
-    // ==== Optional: start periodic sampling for scenarios tagged @sample ====
-    @Before("@sample")
-    public void startSampler() {
-        // start background periodic snapshots while scenario runs
-        sampler = new AuditSampler();
-        sampler.start(driver, auditOutDir + File.separator + "samples", defaultSamplerMs);
-        System.out.println("AuditSampler started: outDir=" + auditOutDir + ", everyMs=" + defaultSamplerMs);
-    }
-
-    @After("@sample")
-    public void stopSampler() {
-        if (sampler != null) {
-            try { sampler.stop(); } catch (Exception ignored) {}
-            System.out.println("AuditSampler stopped.");
-        }
-    }
-
-    // ==== One-shot export after scenarios tagged @collect ====
-    @After("@collect")
-    public void exportAllStrategies(Scenario scenario) {
+    private static void exportCsv(List<ElementWithStrategies> items, String csvPath) throws IOException {
+        File out = new File(csvPath); if (out.getParentFile() != null) out.getParentFile().mkdirs();
+        BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(out), StandardCharsets.UTF_8));
         try {
-            String ts = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-            String fileName = "ctx_elements_" + ts + ".md";
-            String outPath = auditOutDir + File.separator + fileName;
-            // Ensure parent dir exists
-            new File(auditOutDir).mkdirs();
+            // Header
+            String header = String.join(",",
+                escapeCsv("windowIndex"), escapeCsv("windowTitle"), escapeCsv("windowUrl"),
+                escapeCsv("framePath"), escapeCsv("frameChain"), escapeCsv("inShadow"), escapeCsv("inModal"),
+                escapeCsv("friendlyName"), escapeCsv("tag"), escapeCsv("strategies"), escapeCsv("preview"),
+                escapeCsv("isDisplayed"), escapeCsv("computedVisible"), escapeCsv("isEnabled"),
+                escapeCsv("isDisabledAttr"), escapeCsv("ariaDisabled"), escapeCsv("isReadOnly"),
+                escapeCsv("isHiddenAttr"), escapeCsv("isChecked"), escapeCsv("isSelected"),
+                escapeCsv("tabIndex"), escapeCsv("visibilityReason"), escapeCsv("computedDisplay"),
+                escapeCsv("computedVisibility"), escapeCsv("computedOpacity")
+            );
+            bw.write(header); bw.newLine();
 
-            ElementStrategyCollector.sweepAllWindowsAndExport(driver, outPath);
-            System.out.println("✅ Element strategies exported to: " + outPath);
-        } catch (Exception e) {
-            System.err.println("Failed to export element strategies: " + e.getMessage());
-        }
-    }
+            for (ElementWithStrategies e : items) {
+                String frameChainStr = frameChainToString(e.context.frameChain);
+                String strategiesStr = join(e.strategies, " | ");
+                String preview = e.preview == null ? "" : e.preview.replaceAll("[\\r\\n]+", " ");
+                ElementState s = e.state == null ? new ElementState() : e.state;
 
-    // ==== Helper: manual checkpoint from step definitions or anywhere you have driver ====
-    // Example usage in your step code: AuditCheckpoints.collectNow(driver, "C:/Automation/Exports/checkpoints", "after_softphone_iframe");
-    // No annotation; utility class is static.
-    // (AuditCheckpoints was provided earlier.)
+                List<String> cols = new ArrayList<String>();
+                cols.add(escapeCsv(String.valueOf(e.context.window.index)));
+                cols.add(escapeCsv(e.context.window.title));
+                cols.add(escapeCsv(e.context.window.url));
+                cols.add(escapeCsv(e.framePath));
+                cols.add(escapeCsv(frameChainStr));
+                cols.add(escapeCsv(String.valueOf(e.context.inShadow)));
+                cols.add(escapeCsv(String.valueOf(e.context.inModal)));
+                cols.add(escapeCsv(e.friendlyName));
+                cols.add(escapeCsv(e.tag));
+                cols.add(escapeCsv(strategiesStr));
+                cols.add(escapeCsv(preview));
+                cols.add(escapeCsv(String.valueOf(s.isDisplayed)));
+                cols.add(escapeCsv(String.valueOf(s.computedVisible)));
+                cols.add(escapeCsv(String.valueOf(s.isEnabled)));
+                cols.add(escapeCsv(String.valueOf(s.isDisabledAttr)));
+                cols.add(escapeCsv(String.valueOf(s.ariaDisabled)));
+                cols.add(escapeCsv(String.valueOf(s.isReadOnly)));
+                cols.add(escapeCsv(String.valueOf(s.isHiddenAttr)));
+                cols.add(escapeCsv(String.valueOf(s.isChecked)));
+                cols.add(escapeCsv(String.valueOf(s.isSelected)));
+                cols.add(escapeCsv(s.tabIndex));
+                cols.add(escapeCsv(s.visibilityReason));
+                cols.add(escapeCsv(s.computedDisplay));
+                cols.add(escapeCsv(s.computedVisibility));
+                cols.add(escapeCsv(s.computedOpacity));
 
-    // ==== After all tests: decide whether to quit the browser ====
-    // You may need to wire this into an @AfterAll or other global teardown depending on your test runner.
-    // Below is a simple static method you can call from a global teardown to respect keepBrowserOpen.
-    public static void maybeQuit(WebDriver driver) {
-        boolean keep = Boolean.getBoolean("keepBrowserOpen"); // run with -DkeepBrowserOpen=true to keep the browser
-        if (!keep) {
-            try {
-                if (driver != null) driver.quit();
-                System.out.println("Browser quit by Hooks.maybeQuit()");
-            } catch (Exception e) {
-                System.err.println("Error while quitting browser: " + e.getMessage());
+                bw.write(join(cols, ",")); bw.newLine();
             }
-        } else {
-            System.out.println("Browser kept open (keepBrowserOpen=true). Close manually when done.");
+            bw.flush();
+        } finally {
+            try { bw.close(); } catch (IOException ignored) {}
         }
     }
 
-    // Optionally, call maybeQuit at end of suite in whichever place you manage global teardown.
-    // Example: in a class annotated with @AfterAll (JUnit) or similar depending on your runner.
+    private static String frameChainToString(List<FrameCtx> chain) {
+        if (chain == null || chain.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        int lvl = 0;
+        for (FrameCtx fc : chain) {
+            if (lvl > 0) sb.append(" | ");
+            sb.append("[").append(lvl++).append("] name=").append(safeText(fc.name))
+              .append(" id=").append(safeText(fc.id)).append(" src=").append(safeText(shorten(fc.src)));
+        }
+        return sb.toString();
+    }
+
+    private static String escapeCsv(String v) {
+        if (v == null) v = "";
+        boolean need = v.contains(",") || v.contains("\"") || v.contains("\n") || v.contains("\r");
+        v = v.replace("\"", "\"\"");
+        return need ? "\"" + v + "\"" : v;
+    }
+
+    // ========== Small utils & helpers ==========
+
+    private static String attr(WebElement el, String name) {
+        try { String v = el.getAttribute(name); return v == null ? "" : v; } catch (Exception e) { return ""; }
+    }
+
+    private interface SupplierWithThrow<T> { T get() throws Exception; }
+
+    private static String safe(SupplierWithThrow<String> sup) {
+        try { String v = sup.get(); return v == null ? "" : v; } catch (Exception e) { return ""; }
+    }
+
+    private static boolean isEmpty(String s) { return s == null || s.trim().isEmpty(); }
+    private static String nonEmpty(String s, String def) { return isEmpty(s) ? def : s; }
+    private static void putIf(Map<String,String> m, String k, String v) { if (!isEmpty(v)) m.put(k, v); }
+    private static String firstNonEmpty(String... vals) { for (String v : vals) if (!isEmpty(v)) return v; return null; }
+    private static String esc(String s) { return s == null ? "" : s.replace("'", "\\'"); }
+    private static String snip(String s) { if (isEmpty(s)) return ""; s = s.replaceAll("\\s+", " ").trim(); return s.length() > 200 ? s.substring(0,200) + "..." : s; }
+    private static String norm(String s) { return isEmpty(s) ? "" : s.trim().replaceAll("\\s+"," "); }
+    private static boolean isLikelyTextual(String tag) { if (tag == null) return false; String t = tag.toLowerCase(); return "button".equals(t) || "a".equals(t) || "span".equals(t) || "div".equals(t); }
+    private static boolean isProbablyDynamic(String clsTok) { return clsTok.matches(".*\\d.*") && clsTok.length() > 12; }
+    private static String safeText(String s) { return s == null ? "" : s.replace("\n", " ").replace("\r", " ").trim(); }
+    private static String shorten(String s) { if (s == null) return ""; s = s.trim(); return s.length() > 80 ? s.substring(0,80) + "…" : s; }
+    private static String join(List<String> list, String sep) { StringBuilder sb = new StringBuilder(); for (int i=0;i<list.size();i++){ if (i>0) sb.append(sep); sb.append(list.get(i)); } return sb.toString(); }
+
+    // ========== CSV helper ==========
+
+    private static String escapeCsv(Object o) { return escapeCsv(o == null ? "" : String.valueOf(o)); }
+
 }
