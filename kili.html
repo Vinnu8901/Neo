@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Offline XPath Locator & POM + API Studio — Shadow Snippets + Java/Python</title>
+<style>
+  :root{
+    --bg:#0f1217; --panel:#151a21; --panel2:#171e27; --chip:#202734;
+    --txt:#e9eef5; --dim:#9db0c5; --brd:#273243;
+    --accent:#7c5cff; --ok:#19c37d; --warn:#ffbf47; --bad:#ff4d4f;
+    --ed-bg:#fbfcfe; --ed-brd:#dfe6ee; --ed-txt:#0f172a;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto}
+  .app{display:grid;grid-template-columns:280px 1fr;height:100%}
+  .side{background:linear-gradient(180deg,#0f1217 0,#0f1217 60%,#0b0e13 100%);border-right:1px solid var(--brd);padding:18px 16px;overflow:auto}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;margin-bottom:14px}
+  .beacon{width:10px;height:10px;border-radius:50%;background:linear-gradient(180deg,var(--accent),#563bff);box-shadow:0 0 10px var(--accent)}
+  .section{margin:16px 0 8px;color:var(--dim);font-size:12px;letter-spacing:.12em;text-transform:uppercase}
+  .btn{width:100%;text-align:left;cursor:pointer;background:var(--panel);border:1px solid var(--brd);border-radius:10px;padding:10px 12px;color:var(--txt);font-weight:600;margin-bottom:8px;transition:.15s}
+  .btn:hover{background:var(--panel2);transform:translateY(-1px)}
+  .btn.primary{background:linear-gradient(180deg,var(--accent),#6047ff);border-color:#5b49f2}
+  .btn.danger{background:linear-gradient(180deg,#ff4d4f,#e13b3e);border-color:#e13b3e}
+  .pill{display:flex;gap:8px;align-items:center;background:var(--chip);border:1px solid var(--brd);border-radius:999px;padding:8px 10px;width:max-content;color:var(--dim);font-size:12px}
+  .switch{display:flex;gap:8px}
+  .switch .sw{padding:8px 12px;border:1px solid var(--brd);border-radius:10px;background:var(--panel);cursor:pointer}
+  .sw.active{outline:2px solid rgba(124,92,255,.35)}
+  .main{display:grid;grid-template-rows:auto 1fr auto}
+  .toolbar{display:flex;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--brd);background:var(--panel);position:sticky;top:0;z-index:5}
+  .toolbar .title{font-weight:800}
+  .hint{color:var(--dim);font-size:12px;margin-left:auto}
+  .mode-chips{display:flex;gap:8px}
+  .mode-chip{padding:6px 10px;border-radius:8px;background:#0f1419;border:1px solid var(--brd);cursor:pointer;color:var(--dim);font-weight:700}
+  .mode-chip.active{background:linear-gradient(90deg,var(--accent),#5a48f0);color:#fff;box-shadow:0 6px 18px rgba(90,72,240,.12)}
+  .workspace{display:grid;grid-template-columns:48% 52%;gap:14px;padding:14px;overflow:auto}
+  .card{background:var(--panel);border:1px solid var(--brd);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .card .head{background:var(--panel2);padding:12px 14px;border-bottom:1px solid var(--brd);display:flex;align-items:center;gap:10px;font-weight:700}
+  .card .body{padding:12px;display:flex;flex-direction:column;gap:10px;min-height:140px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  select,input[type="text"]{background:var(--panel2);border:1px solid var(--brd);border-radius:10px;color:var(--txt);padding:8px 10px}
+  textarea.ed{background:var(--ed-bg);border:1px solid var(--ed-brd);border-radius:12px;color:var(--ed-txt);padding:10px;min-height:130px;font-family:ui-monospace,Menlo,Consolas,monospace}
+  iframe#preview{width:100%;height:360px;background:#fff;border:none;border-radius:8px}
+  .drop{display:flex;justify-content:center;align-items:center;height:56px;border:2px dashed #3a475a;border-radius:12px;color:var(--dim)}
+  .chip-tabs{display:flex;gap:8px;flex-wrap:wrap;background:var(--panel);border-bottom:1px solid var(--brd);padding:8px 12px}
+  .chip{padding:8px 12px;border:1px solid var(--brd);border-radius:999px;background:#1a2230;color:#b8c6d9;font-size:12px;cursor:pointer}
+  .chip.active{color:#fff;border-color:var(--accent);box-shadow:0 0 0 2px rgba(124,92,255,.25) inset}
+  .list{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto;background:var(--ed-bg);border:1px solid var(--ed-brd);border-radius:12px;padding:8px}
+  .loc-row{background:#fff;border:1px solid #e6ecf5;border-radius:8px;padding:8px 10px;color:#0f172a;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .loc-row:hover{background:#f5f8ff}
+  .badge{font-size:11px;background:#eef2ff;border:1px solid #d8e1ff;border-radius:999px;padding:2px 8px;margin-right:8px;color:#1f2b46}
+  .strategy-badge{font-size:11px;background:#eef2ff;border:1px solid #d8e1ff;border-radius:6px;padding:2px 6px;margin-left:8px;color:#1f2b46}
+  .snippet-box{background:#0f1727;color:#dff3ff;border-radius:8px;padding:8px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;white-space:pre;overflow:auto}
+  .snippet-row{display:flex;gap:8px;align-items:flex-start;padding:6px;border-radius:6px;background:#fbfcfe;border:1px solid #e6ecf5}
+  .footer{display:flex;gap:10px;align-items:center;padding:12px 16px;border-top:1px solid var(--brd);background:var(--panel)}
+  .toast{position:fixed;bottom:16px;right:16px;background:#131a24;border:1px solid #2a3648;color:#cfe3ff;padding:10px 12px;border-radius:10px;opacity:0;transform:translateY(8px);transition:.15s;z-index:9999}
+  .toast.show{opacity:1;transform:translateY(0)}
+  .small{font-size:12px;color:var(--dim)}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .hidden{display:none}
+  .element-row{border-radius:8px;padding:8px;margin:8px 0;background:#fff;color:#0f172a;border:1px solid #e6ecf5}
+  @media (max-width:980px){.workspace{grid-template-columns:1fr}}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><span class="beacon"></span> Offline XPath Studio</div>
+
+    <div class="section">Workspace</div>
+    <button class="btn" id="btnPaste">Paste HTML</button>
+    <button class="btn" id="btnOpenFile">Open .html file</button>
+    <div class="pill">Drag & drop file into preview</div>
+    <button class="btn danger" id="btnClear">Clear</button>
+    <button class="btn" id="btnExport">Export (locators + checks)</button>
+
+    <div class="section">POM &amp; Steps</div>
+    <div class="switch">
+      <div class="sw active" data-fw="selenium">Selenium</div>
+      <div class="sw" data-fw="playwright">Playwright</div>
+    </div>
+    <div style="height:8px"></div>
+    <div class="switch">
+      <div class="sw active" data-runner="testng">Maven + TestNG</div>
+      <div class="sw" data-runner="cucumber">Maven + Cucumber</div>
+    </div>
+    <div style="height:8px"></div>
+    <div class="switch">
+      <div class="sw active" data-lang="java">Java</div>
+      <div class="sw" data-lang="javascript">JavaScript</div>
+      <div class="sw" data-lang="python">Python</div>
+      <div class="sw" data-lang="typescript">TypeScript</div>
+    </div>
+    <button class="btn primary" id="btnGenPOM" style="margin-top:10px">Generate POM + Steps</button>
+    <button class="btn" id="btnDownloadPOM">Download POM file</button>
+    <button class="btn" id="btnDownloadSteps">Download Steps file</button>
+    <button class="btn" id="btnZipAll">Download ZIP (All)</button>
+  </aside>
+
+  <main class="main">
+    <div class="toolbar">
+      <div class="title">Offline XPath Recorder — Paste Mode</div>
+      <div class="mode-chips">
+        <div class="mode-chip active" id="modePOM">POM Studio</div>
+        <div class="mode-chip" id="modeAPI">API Studio</div>
+      </div>
+      <div class="hint">Row click = copy • Priority: name → label → class → placeholder</div>
+    </div>
+
+    <div class="workspace">
+      <section class="card" id="pomLeftCard">
+        <div class="head">Paste HTML</div>
+        <div class="body">
+          <textarea class="ed" id="pasteBox" placeholder="Paste full page HTML here..."></textarea>
+          <div class="row">
+            <button class="btn primary" id="btnRender" style="width:auto">Render Preview</button>
+            <div class="pill mono">shadow DOM supported at runtime</div>
+          </div>
+          <div class="head" style="margin:6px -12px 0;border-radius:10px">Preview</div>
+          <div class="body" style="gap:12px">
+            <div id="dropZone" class="drop">Drop .html here</div>
+            <iframe id="preview" sandbox="allow-same-origin allow-forms allow-scripts"></iframe>
+          </div>
+        </div>
+      </section>
+
+      <section class="card hidden" id="apiLeftCard">
+        <div class="head">Paste cURL</div>
+        <div class="body">
+          <textarea class="ed mono" id="curlBox" placeholder="Paste cURL here (from Postman/Insomnia)..."></textarea>
+          <div class="row" style="align-items:center; gap:12px">
+            <label class="small">Framework</label>
+            <select id="apiFramework">
+              <option value="restassured">RestAssured (Java)</option>
+              <option value="karate">Karate DSL</option>
+            </select>
+            <button class="btn primary" id="btnGenAPI" style="width:auto">Generate API Code</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="rightCard">
+        <div class="head">Locators &amp; Code</div>
+        <div class="body" id="rightBody">
+          <div class="chip-tabs" id="locatorTabs">
+            <div class="chip active" data-paneltab="basic">Basic</div>
+            <div class="chip" data-paneltab="wildcards">Wildcards</div>
+            <div class="chip" data-paneltab="axes">Axes</div>
+            <div class="chip" data-paneltab="functions">Functions & Relatives</div>
+            <div class="chip" data-paneltab="salesforce">Salesforce</div>
+            <div class="chip" data-paneltab="pega">Pega</div>
+          </div>
+
+          <div id="locator-toolbar" style="display:flex; gap:10px; align-items:center; margin:10px 0;">
+            <label><input type="checkbox" id="loc-sel-all"> Select all</label>
+            <label><input type="checkbox" id="loc-template"> Template (%s)</label>
+            <button id="loc-copy" class="btn" style="padding:6px 10px;width:auto">Copy selected</button>
+            <button id="loc-download" class="btn" style="padding:6px 10px;width:auto">Download selected</button>
+            <span id="loc-count" style="margin-left:auto; color:#9db0c5; font-size:13px;"></span>
+          </div>
+
+          <div id="locator-list" class="list" style="max-height:46vh;">
+            <div id="locator-dump" style="display:none;"></div>
+            <div id="locList" style="display:none;"></div>
+          </div>
+
+          <div class="head" style="margin:8px -12px 0;border-radius:10px">Output</div>
+          <textarea class="ed mono" id="output" placeholder="POM / Steps / Export text will appear here…"></textarea>
+        </div>
+      </section>
+    </div>
+
+    <div class="footer">
+      <div class="pill">Copy any locator by clicking its row</div>
+      <div class="pill">Export includes isVisible / isClickable / isEnabled with waits</div>
+    </div>
+  </main>
+</div>
+<input id="hiddenFile" type="file" accept=".html,.htm,.xhtml,.txt" hidden/>
+<div id="toast" class="toast" aria-live="polite">Ready ✔</div>
+
+<script>
+(function(global){
+  const NS = (global.AdhyPatch = global.AdhyPatch || {});
+  NS.version = 'adhy-offline-2025-shadow-js-java-py';
+
+  NS.CURRENT_LOCATORS = [];
+  NS.UI = {};
+
+  NS.$ = (sel, root) => { try { return (root||document).querySelector(sel); } catch(e) { return null; } };
+  NS.$$ = (sel, root) => { try { return Array.from((root||document).querySelectorAll(sel)); } catch(e){ return []; } };
+
+  function uid(prefix='u'){ return prefix + '_' + Math.random().toString(36).slice(2,10); }
+
+  function toast(msg, type='info'){
+    let t = document.getElementById('toast');
+    if(!t) return;
+    t.textContent = msg;
+    t.style.background = type==='error' ? '#b91c1c' : type==='success' ? '#047857' : '#111';
+    t.classList.add('show');
+    clearTimeout(t._t);
+    t._t = setTimeout(()=>{ t.classList.remove('show'); }, 1600);
+  }
+
+  async function copyText(txt){
+    try {
+      await navigator.clipboard.writeText(txt);
+      toast('Copied', 'success');
+      return true;
+    } catch(e){
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = txt;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        toast('Copied', 'success');
+        return true;
+      } catch(err){
+        toast('Copy failed', 'error');
+        return false;
+      }
+    }
+  }
+
+  function xpathLiteral(s){
+    s = String(s||'');
+    if (s.indexOf('"') === -1) return `"${s}"`;
+    if (s.indexOf("'") === -1) return `'${s}'`;
+    const parts = s.split('"'), out = [];
+    for (let i=0;i<parts.length;i++){
+      if (parts[i] !== '') out.push(`"${parts[i]}"`);
+      if (i < parts.length - 1) out.push(`'"'`);
+    }
+    return `concat(${out.join(',')})`;
+  }
+
+  function getPreviewEl(){ return NS.$('#preview'); }
+  function getPreviewDoc(){
+    const f = getPreviewEl();
+    if(f && f.tagName && f.tagName.toLowerCase() === 'iframe'){
+      try { if(f.contentDocument && f.contentDocument.body) return f.contentDocument; } catch(e){}
+    }
+    return window._PARSER_DOC || document;
+  }
+
+  const TOP_ATTRS = ['id','data-value','data-test-id','data-testid','data-qa','data-qa-locator','data-id','name','aria-label','title','placeholder','value','role','type'];
+
+  function getAttr(el,k){ try{ return el.getAttribute && el.getAttribute(k); } catch(e){ return null; } }
+  function firstText(el){ try{ return (el.innerText||el.textContent||'').trim(); } catch(e){ return ''; } }
+  function firstClassToken(el){ try{ const c = getAttr(el,'class'); if(!c) return ''; return c.split(/\s+/).filter(Boolean)[0] || ''; }catch(e){ return ''; } }
+  function dedupe(arr){ const out=[], s=new Set(); for(const i of arr){ const k=String(i||'').trim(); if(!k || s.has(k)) continue; s.add(k); out.push(k);} return out; }
+  function tokenise(val){ if(!val) return []; return String(val).split(/[\s\-_:|.]+/).filter(Boolean).slice(0,6); }
+
+  function genBasicList(el){
+    const tag = el.tagName.toLowerCase(); const out = [];
+    for(const a of TOP_ATTRS){ const v = getAttr(el, a); if(v) out.push(`//${tag}[@${a}=${xpathLiteral(v)}]`); }
+    if(el.id){ out.push(`//label[@for=${xpathLiteral(el.id)}]/following::${tag}[1]`); } else {
+      const lbl = el.closest && el.closest('label');
+      if(lbl){ const lt = firstText(lbl); if(lt) out.push(`//label[normalize-space(.)=${xpathLiteral(lt)}]/following::${tag}[1]`); }
+    }
+    const txt = firstText(el); if(txt) out.push(`//${tag}[normalize-space(.)=${xpathLiteral(txt)}]`);
+    out.push(`//${tag}`);
+    return dedupe(out);
+  }
+  function genWildList(el){
+    const tag = el.tagName.toLowerCase(); const out = [];
+    for(const a of TOP_ATTRS){ const v = getAttr(el, a); if(v) out.push(`//${tag}[contains(@${a}, ${xpathLiteral(String(v))})]`); }
+    const clsTok = firstClassToken(el); if(clsTok) out.push(`//${tag}[contains(concat(' ', normalize-space(@class), ' '), ${xpathLiteral(' '+clsTok+' ')})]`);
+    const txt = firstText(el); if(txt) out.push(`//${tag}[contains(normalize-space(.), ${xpathLiteral(txt)})]`);
+    return dedupe(out);
+  }
+  function genAxesList(el){
+    const tag = el.tagName.toLowerCase(); const out = [];
+    if(el.id) out.push(`//label[@for=${xpathLiteral(el.id)}]/following::${tag}[1]`);
+    const lbl = el.closest && el.closest('label'); if(lbl){ const lt = firstText(lbl); if(lt) out.push(`//label[contains(normalize-space(.), ${xpathLiteral(lt)})]/following::${tag}[1]`); }
+    let a = el.parentElement, hops=0;
+    while(a && hops<4){ const t = firstText(a); if(t && t.length < 120){ out.push(`//*[contains(normalize-space(.), ${xpathLiteral(t.slice(0,60))})]//${tag}`); break; } a = a.parentElement; hops++; }
+    return dedupe(out);
+  }
+  function genFuncList(el){
+    const tag = el.tagName.toLowerCase(); const out = [];
+    ['placeholder','title','aria-label','name','value'].forEach(k=>{ const v = getAttr(el,k); if(v) out.push(`//${tag}[contains(@${k}, ${xpathLiteral(v)})]`);});
+    const txt = firstText(el); if(txt) out.push(`//${tag}[contains(normalize-space(.), ${xpathLiteral(txt)})]`);
+    return dedupe(out);
+  }
+
+  function genSfList(el){
+    const tag = el.tagName.toLowerCase(); const out = [];
+    const SF_ATTRS = ['data-id','data-aura-rendered-by','data-rendered-by','data-key','data-record-id','data-test-id','data-qa-locator','data-testid','data-qa','data-ctl'];
+    SF_ATTRS.forEach(k=>{
+      const v = getAttr(el,k);
+      if(v){ out.push(`//${tag}[@${k}=${xpathLiteral(v)}]`); out.push(`//${tag}[contains(@${k}, ${xpathLiteral(String(v))})]`); const tok = String(v).split(/[\s\-_:.|]+/).filter(Boolean)[0]; if(tok && tok.length>1) out.push(`//${tag}[starts-with(@${k}, ${xpathLiteral(tok)})]`); }
+    });
+    const aria = getAttr(el,'aria-label'); if(aria) out.push(`//${tag}[@aria-label=${xpathLiteral(aria)}]`);
+    const title = getAttr(el,'title'); if(title) out.push(`//${tag}[@title=${xpathLiteral(title)}]`);
+    try{ const lbl = el.closest && el.closest('label'); if(lbl){ const lt = firstText(lbl); if(lt) out.push(`//label[normalize-space(.)=${xpathLiteral(lt)}]/following::${tag}[1]`); } else { const nearestLabelOnDoc = Array.from((el.ownerDocument||document).querySelectorAll('label')).find(l=>firstText(l) && firstText(l).length<80 && firstText(l).includes(firstText(el).slice(0,6))); if(nearestLabelOnDoc){ const lt = firstText(nearestLabelOnDoc); if(lt) out.push(`//label[normalize-space(.)=${xpathLiteral(lt)}]/following::${tag}[1]`); } } }catch(e){}
+    const labelled = getAttr(el,'aria-labelledby'); if(labelled){ labelled.split(/\s+/).filter(Boolean).forEach(id=>{ out.push(`//*[@id=${xpathLiteral(id)}]//following::${tag}[1]`); out.push(`//*[@id=${xpathLiteral(id)}]//${tag}`); }); }
+    let p = el;
+    while(p && p.tagName && p.tagName.toLowerCase() !== 'body'){
+      const t = p.tagName.toLowerCase();
+      if(t.startsWith('c-') || t.startsWith('lightning-') || t.startsWith('ui-') || t.indexOf('namespace')>-1){
+        out.push(`//${t}//${tag}`); break;
+      }
+      p = p.parentElement;
+    }
+    const cls = getAttr(el,'class'); if(cls) tokenise(cls).slice(0,3).forEach(tok=>out.push(`//${tag}[contains(concat(' ', normalize-space(@class), ' '), ${xpathLiteral(' '+tok+' ')})]`));
+    const txt = firstText(el); if(txt) out.push(`//${tag}[contains(normalize-space(.), ${xpathLiteral(txt.slice(0,40))})]`);
+    return dedupe(out);
+  }
+
+  function genPegaList(el){
+    const tag = el.tagName.toLowerCase(); const out = [];
+    const PEGA_ATTRS = ['data-test-id','data-ctl','data-pz','pylabel','pyLabel','pyDisplayValue','pyName','pzInsKey','pzIndex','name','data-pegaps','data-pz'];
+    PEGA_ATTRS.forEach(k=>{ const v = getAttr(el,k); if(v){ out.push(`//${tag}[@${k}=${xpathLiteral(v)}]`); out.push(`//${tag}[contains(@${k}, ${xpathLiteral(String(v))})]`); }});
+    try{ const anc = el.closest && el.closest('[data-test-id],[data-ctl],[id]'); if(anc){ const aid = getAttr(anc,'data-test-id') || getAttr(anc,'id') || getAttr(anc,'data-ctl'); if(aid){ const attrKey = getAttr(anc,'id') ? 'id' : (getAttr(anc,'data-test-id') ? 'data-test-id' : 'data-ctl'); out.push(`//${anc.tagName.toLowerCase()}[@${attrKey}=${xpathLiteral(aid)}]//${tag}`); } } }catch(e){}
+    const cls = getAttr(el,'class'); if(cls) tokenise(cls).slice(0,3).forEach(tok=>out.push(`//${tag}[contains(concat(' ', normalize-space(@class), ' '), ${xpathLiteral(' '+tok+' ')})]`));
+    try{ let parent = el.parentElement, hops=0; while(parent && hops<6){ const pcls = getAttr(parent,'class') || ''; if(/grid|pzGrid|list|repeat|table|tbody|rows/i.test(pcls) || parent.tagName.toLowerCase()==='table'){ const txt = firstText(el); if(txt) out.push(`//${parent.tagName.toLowerCase()}[contains(concat(' ', normalize-space(@class), ' '), ${xpathLiteral(' '+pcls.split(/\s+/)[0]+' ')})]//${tag}[contains(normalize-space(.), ${xpathLiteral(txt.slice(0,30))})]`); out.push(`//${parent.tagName.toLowerCase()}//${tag}`); break; } parent = parent.parentElement; hops++; } }catch(e){}
+    try{ const lbl = el.closest && el.closest('label'); if(lbl){ const lt = firstText(lbl); if(lt) out.push(`//label[normalize-space(.)=${xpathLiteral(lt)}]/following::${tag}[1]`); } const prev = el.previousElementSibling; if(prev){ const ptxt = firstText(prev); if(ptxt) out.push(`//*[normalize-space(.)=${xpathLiteral(ptxt)}]/following::${tag}[1]`); } }catch(e){}
+    const txt = firstText(el); if(txt) out.push(`//${tag}[contains(normalize-space(.), ${xpathLiteral(txt.slice(0,40))})]`);
+    return dedupe(out);
+  }
+
+  function scoreCandidate(xpathStr, el){
+    if(!xpathStr) return 0;
+    const lower = xpathStr.toLowerCase();
+    let score = 1;
+    if(/@data-aura-rendered-by=/.test(lower) || /data-record-id/.test(lower) || /data-key=/.test(lower)) score += 220;
+    if(/@data-test-id=/.test(lower) || /@data-ctl=/.test(lower) || /@data-pz=/.test(lower) || /pzinskey/.test(lower) || /pylabel/.test(lower)) score += 200;
+    if(/@id=/.test(lower)) score += 140;
+    if(/@data-value=/.test(lower)) score += 140;
+    if(/@data-/.test(lower)) score += 100;
+    if(/@name=/.test(lower)) score += 60;
+    if(/@aria-label=/.test(lower) || /@title=/.test(lower)) score += 60;
+    if(/normalize-space\(\.\)=/.test(lower) || /text\(\)/.test(lower)) score += 50;
+    if(/contains\(.+@class/.test(lower) || /contains\(concat\(/.test(lower)) score += 30;
+    if(/following::/.test(lower) || /ancestor::|preceding::/.test(lower)) score += 25;
+    if(/^\/\/[a-z0-9]+$/.test(lower)) score -= 40;
+    return score;
+  }
+
+  function pickBestForElement(elObj){
+    const strategies = Object.keys(elObj.candidates || {});
+    let best = '', bestScore = -9999, bestStrat = '', bestIdx = 0;
+    strategies.forEach(strat=>{
+      const arr = elObj.candidates[strat]||[];
+      arr.forEach((xp, idx)=>{
+        const sc = scoreCandidate(xp, elObj.elRef);
+        if(sc > bestScore){ bestScore = sc; best = xp; bestStrat = strat; bestIdx = idx; }
+      });
+    });
+    elObj.best = best || '';
+    elObj.bestScore = bestScore;
+    elObj.chosen = elObj.chosen || {};
+    strategies.forEach(strat=>{ const arr = elObj.candidates[strat]||[]; if(arr.length){ if(!elObj.chosen[strat]) elObj.chosen[strat] = arr[0]; } else elObj.chosen[strat] = ''; });
+    elObj.autoSelected = { xpath: best, strategy: bestStrat, idx: bestIdx, score: bestScore };
+    return elObj;
+  }
+
+  function shouldSkip(el){
+    try{
+      if(!el || el.nodeType !== 1) return true;
+      if(el.hasAttribute && el.hasAttribute('hidden')) return true;
+      const s = (getAttr(el,'style')||'').toLowerCase();
+      if(s && (/display\s*:\s*none|visibility\s*:\s*hidden/).test(s)) return true;
+      if(el.tagName && el.tagName.toLowerCase()==='script') return true;
+      if(el.tagName && el.tagName.toLowerCase()==='a' && (!el.hasAttribute('href') || el.getAttribute('href') === '#')) return true;
+    }catch(e){}
+    return false;
+  }
+
+  function collectCandidateElements(doc){
+    const sel = ['input:not([type="hidden"])','button','a','select','textarea','[role="button"]','[data-qa-locator]','[data-test-id]','[data-ctl]','lightning-input','lightning-button','lightning-base-combobox-item'].join(',');
+    let list = [];
+    try { list = Array.from(doc.querySelectorAll(sel)); } catch(e){ list = []; }
+    list = list.filter(el => !shouldSkip(el));
+    const seen = new Set(), out = [];
+    list.forEach(el=>{
+      try {
+        const sig = [el.tagName.toLowerCase(), el.id||'', getAttr(el,'name')||'', firstText(el).slice(0,60)].join('|');
+        if(seen.has(sig)) return;
+        seen.add(sig);
+        out.push(el);
+      } catch(e){}
+    });
+    return out;
+  }
+
+  // ---- Shadow helpers & snippet builder (adds Java/Python wrappers) ----
+  function isCustomElementTag(name){
+    if(!name) return false;
+    name = name.toLowerCase();
+    return name.includes('-') || name.startsWith('c-') || name.startsWith('lightning-') || name.startsWith('ui-');
+  }
+  function selectorForHost(el){
+    try{
+      if(!el || !el.tagName) return null;
+      const tag = el.tagName.toLowerCase();
+      if(el.id) return `${tag}#${el.id}`;
+      const cls = el.className || '';
+      const token = String(cls).split(/\s+/).filter(Boolean)[0];
+      if(token) return `${tag}.${token}`;
+      return tag;
+    }catch(e){ return null; }
+  }
+  function cssSelectorFor(el){
+    try{
+      if(!el || !el.tagName) return '';
+      if(el.id) { const escapedId = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(el.id) : el.id; return '#' + escapedId; }
+      let sel = el.tagName.toLowerCase();
+      const cls = el.className || '';
+      if(cls){ const tok = String(cls).split(/\s+/).filter(Boolean)[0]; if(tok) sel += '.' + tok; }
+      if(getAttr(el,'name')) sel += `[name="${getAttr(el,'name')}"]`;
+      return sel;
+    }catch(e){ return ''; }
+  }
+
+  function buildShadowSnippetsForElement(el){
+    try{
+      const hosts = [];
+      let p = el.parentElement;
+      while(p && p.tagName && p.tagName.toLowerCase() !== 'body'){
+        const t = p.tagName.toLowerCase();
+        if(isCustomElementTag(t)){
+          const sel = selectorForHost(p) || t;
+          hosts.unshift({ tag: t, selector: sel });
+        }
+        p = p.parentElement;
+      }
+      if(hosts.length === 0) return null;
+      const targetCss = cssSelectorFor(el) || el.tagName.toLowerCase();
+
+      // build JS snippet
+      const parts = [];
+      parts.push('// Selenium / executeScript snippet (JavaScript). Returns DOM element or null.');
+      parts.push('return (function(){');
+      parts.push('  try {');
+      hosts.forEach((h, idx)=>{
+        parts.push(`    const host${idx} = document.querySelector(${JSON.stringify(h.selector)});`);
+        parts.push(`    if(!host${idx}) return null;`);
+        parts.push(`    const root${idx} = host${idx}.shadowRoot;`);
+        parts.push(`    if(!root${idx}) return null;`);
+      });
+      if(hosts.length > 0){
+        const lastRoot = `root${hosts.length-1}`;
+        parts.push(`    return ${lastRoot}.querySelector(${JSON.stringify(targetCss)});`);
+      } else {
+        parts.push(`    return document.querySelector(${JSON.stringify(targetCss)});`);
+      }
+      parts.push('  } catch(e) { return null; }');
+      parts.push('})();');
+      const jsSnippet = parts.join('\n');
+
+      // Playwright locator
+      const pwParts = hosts.map(h => h.selector).concat([targetCss]);
+      const pwLocator = pwParts.join(' >> ');
+
+      // Java wrapper (using Java text block for readability)
+      // Note: Java text block requires Java 15+. If you need pre-Java 15 output, tell me and I'll produce concatenated strings.
+      const javaWrapper =
+`// Java (Selenium) - Java 15+ (text block)
+String script = \"\"\"${jsSnippet.replace(/\"\"\"/g, '\\"""')}\"\"\";
+Object element = ((org.openqa.selenium.JavascriptExecutor) driver).executeScript(script);
+// 'element' is a JS DOM node object in the returned script; you may need to map it to a WebElement using Selenium's approach if your binding supports it.`;
+
+      // Python wrapper
+      const pythonWrapper =
+`# Python (Selenium)
+script = \"\"\"${jsSnippet.replace(/\"\"\"/g, '\\"""')}\"\"\"
+element = driver.execute_script(script)
+# 'element' will be the DOM node (or None), depending on Selenium bindings`;
+
+      return { js: jsSnippet, playwright: `page.locator(${JSON.stringify(pwLocator)})`, java: javaWrapper, python: pythonWrapper, hosts, targetCss };
+    }catch(e){ return null; }
+  }
+
+  function buildLocatorObjectFromElement(el){
+    const o = {
+      _uid: uid('loc'),
+      tag: el.tagName.toLowerCase(),
+      text: firstText(el),
+      elRef: el,
+      candidates: {
+        basic: genBasicList(el),
+        wildcards: genWildList(el),
+        axes: genAxesList(el),
+        functions: genFuncList(el),
+        salesforce: genSfList(el),
+        pega: genPegaList(el)
+      },
+      chosen: {},
+    };
+    o.shadow = buildShadowSnippetsForElement(el);
+    pickBestForElement(o);
+    return o;
+  }
+
+  // UI builder
+  function makeElementRow(elObj){
+    const row = document.createElement('div');
+    row.className = 'element-row';
+    row.dataset.uid = elObj._uid;
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:8px';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'elem-check';
+    cb.dataset.uid = elObj._uid;
+    cb.checked = !!elObj.best;
+
+    const toggle = document.createElement('button');
+    toggle.textContent = '▶';
+    toggle.title = 'Expand strategies';
+    toggle.style.cssText = 'width:30px;height:30px;border-radius:6px;border:1px solid #e6ecf5;background:#f8fafc;cursor:pointer';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'flex:0 0 200px;min-width:120px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    const labelText = elObj.text || (elObj.tag || 'element');
+    title.textContent = labelText.length>40 ? labelText.slice(0,40)+'…' : labelText;
+
+    const bestWrap = document.createElement('div');
+    bestWrap.style.cssText = 'flex:1;display:flex;gap:8px;align-items:center';
+    if(elObj.autoSelected && elObj.autoSelected.xpath){
+      const star = document.createElement('span');
+      star.textContent='⭐';
+      star.title = `Auto-selected: ${elObj.autoSelected.strategy}`;
+      star.style.cssText='font-size:14px';
+      bestWrap.appendChild(star);
+    }
+    const xpPreview = document.createElement('div');
+    xpPreview.className = 'mono';
+    xpPreview.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer';
+    xpPreview.title = elObj.autoSelected && elObj.autoSelected.xpath || '';
+    xpPreview.textContent = elObj.autoSelected && elObj.autoSelected.xpath || '(no xpath)';
+    bestWrap.appendChild(xpPreview);
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:6px';
+    const btnCopyBest = document.createElement('button');
+    btnCopyBest.className='btn';
+    btnCopyBest.textContent='Copy';
+    btnCopyBest.style.cssText='padding:4px 8px;width:auto;font-size:12px';
+
+    const btnHiBest = document.createElement('button');
+    btnHiBest.className='btn';
+    btnHiBest.textContent='Highlight';
+    btnHiBest.style.cssText='padding:4px 8px;width:auto;font-size:12px';
+
+    const btnRemove = document.createElement('button');
+    btnRemove.className='btn';
+    btnRemove.textContent='Remove';
+    btnRemove.style.cssText='padding:4px 8px;width:auto;font-size:12px';
+
+    actions.appendChild(btnCopyBest);
+    actions.appendChild(btnHiBest);
+    actions.appendChild(btnRemove);
+    header.appendChild(cb);
+    header.appendChild(toggle);
+    header.appendChild(title);
+    header.appendChild(bestWrap);
+    header.appendChild(actions);
+
+    const body = document.createElement('div');
+    body.style.cssText = 'margin-top:8px;display:none;flex-direction:column;gap:6px';
+
+    const strategies = ['basic','wildcards','axes','functions','salesforce','pega'];
+    strategies.forEach(strategy=>{
+      const candidates = elObj.candidates[strategy] || [];
+      const stratRow = document.createElement('div');
+      stratRow.style.cssText = 'display:flex;gap:8px;align-items:flex-start;padding:6px;border-radius:6px;background:#fbfcfe;border:1px solid #e6ecf5';
+
+      const stratLabel = document.createElement('div');
+      stratLabel.style.cssText = 'width:120px;font-weight:800;color:#0f172a;display:flex;align-items:center';
+      stratLabel.textContent = strategy.toUpperCase();
+
+      const stratBadge = document.createElement('span');
+      stratBadge.className = 'strategy-badge';
+      if(strategy==='salesforce') stratBadge.textContent = 'SF';
+      else if(strategy==='pega') stratBadge.textContent = 'PEGA';
+      else stratBadge.textContent = strategy.toUpperCase();
+      stratLabel.appendChild(stratBadge);
+
+      const candidateWrap = document.createElement('div');
+      candidateWrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;flex:1';
+
+      if(candidates.length===0){
+        const none = document.createElement('div');
+        none.className='small mono';
+        none.textContent = '(none)';
+        candidateWrap.appendChild(none);
+      } else {
+        candidates.forEach((c, candIdx) => {
+          const candLine = document.createElement('div');
+          candLine.style.cssText = 'display:flex;gap:8px;align-items:center';
+
+          const radio = document.createElement('input');
+          radio.type = 'radio';
+          radio.name = `rad_${elObj._uid}_${strategy}`;
+          radio.value = c;
+
+          if(elObj.chosen && elObj.chosen[strategy]) radio.checked = (elObj.chosen[strategy] === c);
+          else { radio.checked = (candIdx===0); elObj.chosen = elObj.chosen || {}; elObj.chosen[strategy] = c; }
+
+          const candText = document.createElement('div');
+          candText.className='mono cand-text';
+          candText.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;flex:1;font-size:12px';
+          candText.title = c;
+          candText.textContent = c;
+
+          const candCopy = document.createElement('button');
+          candCopy.className='btn small-copy';
+          candCopy.textContent='Copy';
+          candCopy.style.cssText='padding:3px 6px;width:auto;font-size:11px';
+
+          const candHi = document.createElement('button');
+          candHi.className='btn small-hi';
+          candHi.textContent='Hi';
+          candHi.style.cssText='padding:3px 6px;width:auto;font-size:11px';
+
+          candLine.appendChild(radio);
+          candLine.appendChild(candText);
+          candLine.appendChild(candCopy);
+          candLine.appendChild(candHi);
+          candidateWrap.appendChild(candLine);
+        });
+      }
+
+      stratRow.appendChild(stratLabel);
+      stratRow.appendChild(candidateWrap);
+      body.appendChild(stratRow);
+    });
+
+    // CSS row
+    const cssRow = document.createElement('div');
+    cssRow.style.cssText = 'display:flex;gap:8px;align-items:center;padding:6px;border-radius:6px;background:#fbfcfe;border:1px solid #e6ecf5';
+    const cssLabel = document.createElement('div');
+    cssLabel.style.cssText='width:120px;font-weight:800';
+    cssLabel.textContent='CSS';
+    const cssVal = document.createElement('div');
+    cssVal.className='mono';
+    cssVal.style.cssText='flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px';
+    const cssSel = cssSelectorFor(elObj.elRef || {});
+    cssVal.textContent = cssSel || '(none)';
+    const cssCopy = document.createElement('button');
+    cssCopy.className='btn';
+    cssCopy.textContent='Copy';
+    cssCopy.style.cssText='padding:3px 6px;width:auto;font-size:11px';
+    cssCopy.onclick = (ev)=>{ ev.stopPropagation(); copyText(cssSel); };
+    cssRow.appendChild(cssLabel);
+    cssRow.appendChild(cssVal);
+    cssRow.appendChild(cssCopy);
+    body.appendChild(cssRow);
+
+    // Shadow snippet UI (if available)
+    if(elObj.shadow){
+      const snRow = document.createElement('div');
+      snRow.className = 'snippet-row';
+      snRow.style.cssText = 'display:flex;flex-direction:column;gap:8px;padding:6px;border-radius:6px;background:#fff;border:1px solid #e6ecf5';
+
+      const snLabelWrap = document.createElement('div');
+      snLabelWrap.style.cssText = 'display:flex;align-items:center;gap:8px';
+      const snLabel = document.createElement('div');
+      snLabel.style.cssText = 'width:120px;font-weight:800';
+      snLabel.textContent = 'Shadow';
+      const snNote = document.createElement('div');
+      snNote.className = 'small';
+      snNote.textContent = 'executeScript / Playwright / Java / Python snippets';
+      snLabelWrap.appendChild(snLabel);
+      snLabelWrap.appendChild(snNote);
+      snRow.appendChild(snLabelWrap);
+
+      const jsBox = document.createElement('div');
+      jsBox.className = 'snippet-box mono';
+      jsBox.textContent = elObj.shadow.js;
+      jsBox.style.maxHeight = '120px';
+      snRow.appendChild(jsBox);
+
+      const pwBox = document.createElement('div');
+      pwBox.className = 'snippet-box mono';
+      pwBox.textContent = `// Playwright locator (use page.locator):\n${elObj.shadow.playwright}`;
+      pwBox.style.maxHeight = '60px';
+      snRow.appendChild(pwBox);
+
+      const javaBox = document.createElement('div');
+      javaBox.className = 'snippet-box mono';
+      javaBox.textContent = elObj.shadow.java;
+      javaBox.style.maxHeight = '120px';
+      snRow.appendChild(javaBox);
+
+      const pyBox = document.createElement('div');
+      pyBox.className = 'snippet-box mono';
+      pyBox.textContent = elObj.shadow.python;
+      pyBox.style.maxHeight = '80px';
+      snRow.appendChild(pyBox);
+
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = 'display:flex;gap:8px';
+      const copyJsBtn = document.createElement('button');
+      copyJsBtn.className = 'btn';
+      copyJsBtn.textContent = 'Copy JS';
+      copyJsBtn.onclick = (ev)=>{ ev.stopPropagation(); copyText(elObj.shadow.js); };
+      const copyPwBtn = document.createElement('button');
+      copyPwBtn.className = 'btn';
+      copyPwBtn.textContent = 'Copy Playwright';
+      copyPwBtn.onclick = (ev)=>{ ev.stopPropagation(); copyText(elObj.shadow.playwright); };
+      const copyJavaBtn = document.createElement('button');
+      copyJavaBtn.className = 'btn';
+      copyJavaBtn.textContent = 'Copy Java';
+      copyJavaBtn.onclick = (ev)=>{ ev.stopPropagation(); copyText(elObj.shadow.java); };
+      const copyPyBtn = document.createElement('button');
+      copyPyBtn.className = 'btn';
+      copyPyBtn.textContent = 'Copy Python';
+      copyPyBtn.onclick = (ev)=>{ ev.stopPropagation(); copyText(elObj.shadow.python); };
+
+      btnRow.appendChild(copyJsBtn);
+      btnRow.appendChild(copyPwBtn);
+      btnRow.appendChild(copyJavaBtn);
+      btnRow.appendChild(copyPyBtn);
+      snRow.appendChild(btnRow);
+
+      body.appendChild(snRow);
+    }
+
+    row.appendChild(header);
+    row.appendChild(body);
+
+    toggle.addEventListener('click', ()=>{
+      if(body.style.display === 'none' || !body.style.display) { body.style.display = 'flex'; toggle.textContent = '▼'; }
+      else { body.style.display = 'none'; toggle.textContent = '▶'; }
+    });
+
+    btnCopyBest.addEventListener('click', (ev)=>{ ev.stopPropagation(); copyText(elObj.autoSelected && elObj.autoSelected.xpath || elObj.best || ''); });
+    btnHiBest.addEventListener('click', (ev)=>{ ev.stopPropagation(); tryHighlightXPathInPreview(elObj.autoSelected && elObj.autoSelected.xpath || elObj.best || ''); });
+
+    btnRemove.addEventListener('click', (ev)=>{ 
+      ev.stopPropagation();
+      const uid = elObj._uid;
+      const i = NS.CURRENT_LOCATORS.findIndex(x => x._uid === uid);
+      if(i>-1) NS.CURRENT_LOCATORS.splice(i,1);
+      renderLocatorList(getActivePanel());
+    });
+
+    xpPreview.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      const xp = xpPreview.textContent||'';
+      if(!xp || xp==='(no xpath)') return;
+      await copyText(xp);
+      tryHighlightXPathInPreview(xp);
+    });
+
+    return row;
+  }
+
+  function getActivePanel(){
+    const act = document.querySelector('#locatorTabs .chip.active');
+    return act ? (act.dataset.paneltab||'basic') : 'basic';
+  }
+
+  function renderLocatorList(panel){
+    const cont = NS.$('#locator-list') || NS.$('#locList');
+    if(!cont) return;
+    cont.innerHTML = '';
+
+    const top = document.createElement('div');
+    top.style.cssText = 'display:flex;gap:10px;align-items:center;margin-bottom:6px';
+
+    const selAllCb = document.createElement('input');
+    selAllCb.type = 'checkbox';
+    selAllCb.className = '__sel_all';
+    selAllCb.addEventListener('change', (e)=> {
+      const checked = !!e.target.checked;
+      cont.querySelectorAll('.elem-check').forEach(cb => cb.checked = checked);
+    });
+    const selAllLabel = document.createElement('label');
+    selAllLabel.style.cssText = 'display:flex;gap:8px;align-items:center';
+    selAllLabel.appendChild(selAllCb);
+    selAllLabel.appendChild(document.createTextNode(' Select all'));
+    top.appendChild(selAllLabel);
+    cont.appendChild(top);
+
+    NS.CURRENT_LOCATORS.forEach((elObj) => {
+      renderIndexSafety(elObj);
+      const row = makeElementRow(elObj);
+      cont.appendChild(row);
+    });
+
+    const footer = document.createElement('div');
+    footer.style.cssText = 'margin-top:6px;color:#6b7280;font-size:12px';
+    footer.textContent = `${NS.CURRENT_LOCATORS.length} elements`;
+    cont.appendChild(footer);
+    NS.UI.locList = cont;
+
+    if(cont && !cont._delegated){
+      cont.addEventListener('click', (e)=>{
+        const target = e.target;
+        if(target.matches && target.matches('.cand-text')){
+          const xp = target.title;
+          if(xp){ copyText(xp); tryHighlightXPathInPreview(xp); }
+          return;
+        }
+        if(target.matches && (target.classList.contains('small-copy') || (target.tagName==='BUTTON' && target.textContent==='Copy'))){
+          const row = target.closest('.element-row');
+          const cand = row && row.querySelector('.cand-text');
+          if(cand && cand.title){ copyText(cand.title); } else { const best = row && row.querySelector('.mono'); if(best && best.title) copyText(best.title); }
+          return;
+        }
+        if(target.matches && (target.classList.contains('small-hi') || (target.tagName==='BUTTON' && target.textContent==='Hi'))){
+          const row = target.closest('.element-row');
+          const cand = row && row.querySelector('.cand-text');
+          if(cand && cand.title){ tryHighlightXPathInPreview(cand.title); }
+          return;
+        }
+      }, true);
+      cont._delegated = true;
+    }
+  }
+
+  function renderIndexSafety(elObj){
+    elObj.candidates = elObj.candidates || { basic:[], wildcards:[], axes:[], functions:[], salesforce:[], pega:[] };
+    elObj.chosen = elObj.chosen || {};
+    Object.keys(elObj.candidates).forEach(k=> { if(!elObj.chosen[k] && elObj.candidates[k] && elObj.candidates[k].length) { elObj.chosen[k] = elObj.candidates[k][0]; } });
+    if(!elObj.autoSelected) pickBestForElement(elObj);
+  }
+
+  function tryHighlightXPathInPreview(xpath){
+    if(!xpath) return false;
+    const prev = getPreviewEl();
+    if(prev && prev.tagName && prev.tagName.toLowerCase()==='iframe'){
+      try {
+        const pd = prev.contentDocument;
+        if(pd && pd.body){
+          const node = pd.evaluate(xpath, pd, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+          if(node){ transientHighlight(node); return true; }
+        }
+      } catch(e){
+        const s = String(e || '');
+        if(/Permission denied|Blocked a frame with origin|SecurityError|cross-origin/i.test(s)){
+          toast('Cannot highlight inside cross-origin iframe (blocked by browser). Open preview page separately to inspect.', 'error');
+          return false;
+        }
+      }
+    }
+    try{ if(window._PARSER_DOC){ const pd = window._PARSER_DOC; const node = pd.evaluate(xpath, pd, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue; if(node){ transientHighlight(node); return true; } } } catch(e){}
+    try{ const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue; if(node){ transientHighlight(node); return true; } } catch(e){}
+    toast('Element not found in preview', 'error');
+    return false;
+  }
+
+  function transientHighlight(el){
+    if(!el || !el.style) return;
+    const orig = { outline: el.style.outline || '', boxShadow: el.style.boxShadow || '' };
+    el.style.outline = '3px solid rgba(124,92,255,0.9)';
+    el.style.boxShadow = '0 0 20px rgba(124,92,255,0.6)';
+    try { el.scrollIntoView({behavior:'smooth', block:'center'}); } catch(e){}
+    setTimeout(()=>{ try{ el.style.outline = orig.outline; el.style.boxShadow = orig.boxShadow; }catch(e){} }, 1500);
+  }
+
+  NS.extractAllLocators = function(){
+    const prevDoc = getPreviewDoc();
+    if(!prevDoc || !prevDoc.body) { toast('Preview document not ready', 'error'); return; }
+    const els = collectCandidateElements(prevDoc);
+    NS.CURRENT_LOCATORS = els.map(el => buildLocatorObjectFromElement(el));
+    NS.CURRENT_LOCATORS.forEach(o => pickBestForElement(o));
+    renderLocatorList(getActivePanel());
+    toast(`Extracted ${NS.CURRENT_LOCATORS.length} elements`, 'success');
+  };
+
+  function interactiveClickHandler(e){
+    try { if(e.preventDefault) e.preventDefault(); if(e.stopPropagation) e.stopPropagation(); const el = e.target; if(!el) return;
+      const obj = buildLocatorObjectFromElement(el);
+      NS.CURRENT_LOCATORS.unshift(obj);
+      renderLocatorList(getActivePanel());
+      const cont = NS.$('#locator-list') || NS.$('#locList');
+      if(cont){ const firstToggle = cont.querySelector('.element-row button'); if(firstToggle) firstToggle.click(); }
+      toast('Captured element', 'success');
+    } catch(err){ console.error(err); toast('Capture failed', 'error'); }
+  }
+
+  NS.attachHandlersToPreview = function(){
+    try {
+      const prev = getPreviewEl(); if(!prev) return;
+      if(prev.tagName && prev.tagName.toLowerCase()==='iframe'){
+        try { const pd = prev.contentDocument; if(pd && pd.body && !pd._adhy_click_installed){ pd.addEventListener('click', interactiveClickHandler, true); pd._adhy_click_installed = true; } } catch(e){}
+      } else { if(!document._adhy_click_installed){ document.addEventListener('click', interactiveClickHandler, true); document._adhy_click_installed = true; } }
+    } catch(e){ console.warn('attachHandlersToPreview failed', e); }
+  };
+
+  NS.renderPreviewFromPaste = function(){
+    const ta = NS.$('#pasteBox'); if(!ta){ toast('pasteBox not found', 'error'); return; }
+    const html = ta.value || ''; if(!html.trim()) { toast('Please paste HTML first', 'error'); return; }
+    NS.CURRENT_HTML = html;
+    const prev = getPreviewEl();
+    if(prev && prev.tagName && prev.tagName.toLowerCase() === 'iframe'){
+      let src = html || '<!doctype html><meta charset="utf-8"><body><h3>No content</h3></body>';
+      try{ src = src.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, ''); }catch(e){}
+      try { prev.srcdoc = src; } catch(e){ try { prev.removeAttribute('sandbox'); prev.srcdoc = src; } catch(e2){ toast('Preview render failed', 'error'); return; } }
+      try { window._PARSER_DOC = (new DOMParser()).parseFromString(html,'text/html'); } catch(e){}
+      const loadHandler = () => { NS.attachHandlersToPreview(); NS.extractAllLocators(); };
+      prev.addEventListener('load', loadHandler, { once: true });
+      setTimeout(loadHandler, 500);
+      toast('Preview rendered', 'success');
+    } else {
+      try { if(prev) prev.innerHTML = html; window._PARSER_DOC = (new DOMParser()).parseFromString(html,'text/html'); setTimeout(()=>{ NS.attachHandlersToPreview(); NS.extractAllLocators(); }, 200); toast('Preview rendered', 'success'); } catch(e){ toast('Render failed', 'error'); }
+    }
+  };
+
+  NS.clearAll = function(){ try { const ta = NS.$('#pasteBox'); if(ta) ta.value = ''; const out = NS.$('#output'); if(out) out.value = ''; const prev = getPreviewEl(); if(prev && prev.tagName && prev.tagName.toLowerCase()==='iframe') { prev.srcdoc = '<body style="display:flex;align-items:center;justify-content:center;height:100%;font-family:system-ui"><h3>Preview cleared</h3></body>'; } NS.CURRENT_LOCATORS = []; renderLocatorList(getActivePanel()); toast('Cleared', 'info'); } catch(e){ console.warn(e); } };
+
+  function getSelectedLocatorsForGeneration(){
+    const cont = NS.$('#locator-list') || NS.$('#locList'); if(!cont) return [];
+    const checks = Array.from(cont.querySelectorAll('.elem-check:checked')); if(checks.length === 0){ toast('Select at least one element', 'error'); return []; }
+    const out = [];
+    checks.forEach(cb=>{
+      const uid = cb.dataset.uid;
+      const elObj = NS.CURRENT_LOCATORS.find(x => x._uid === uid);
+      if(!elObj) return;
+      let rep = (elObj.autoSelected && elObj.autoSelected.xpath) || '';
+      if(!rep) rep = (elObj.chosen && (elObj.chosen.basic || Object.values(elObj.chosen).find(x=>x))) || '';
+      const nameRaw = elObj.text || elObj.tag || `elem`;
+      const name = nameRaw.replace(/\s+/g,'_').replace(/[^A-Za-z0-9_]/g,'').slice(0,40) || `elem`;
+      out.push({ name, xpath: rep, tag: elObj.tag, uid: elObj._uid });
+    });
+    return out;
+  }
+
+  function sanitizeClassName(s){ return (s||'SamplePage').replace(/[^A-Za-z0-9_]/g,'_').replace(/^\d+/,'Page_'); }
+
+  function buildArtifacts({ fw, lang, locs }){
+    if(!Array.isArray(locs)) locs = [];
+    fw = (fw || 'selenium').toLowerCase();
+    lang = (lang || 'java').toLowerCase();
+    const className = sanitizeClassName('SamplePage');
+    const esc = s => String(s||'').replace(/"/g,'\\"');
+    const files = {};
+    files['README.md'] = `# Generated by Adhyan Offline\nFramework: ${fw}\nLanguage: ${lang}\nElements: ${locs.length}\n`;
+    if(fw==='selenium' && lang==='java'){
+      const fields = locs.map(l=>`    @FindBy(xpath = "${esc(l.xpath)}")\n    private WebElement ${l.name};`).join('\n\n');
+      const methods = locs.map(l=>{
+        const C = (l.name.charAt(0).toUpperCase()+l.name.slice(1));
+        const t = (l.tag||'').toLowerCase();
+        if(t==='input') return `    public void type${C}(String v){ ${l.name}.clear(); ${l.name}.sendKeys(v); }`;
+        if(t==='button') return `    public void click${C}(){ ${l.name}.click(); }`;
+        return `    public boolean is${C}Visible(){ return ${l.name}.isDisplayed(); }`;
+      }).join('\n\n');
+      const content = `package com.pageobjects;\n\nimport org.openqa.selenium.WebDriver;\nimport org.openqa.selenium.WebElement;\nimport org.openqa.selenium.support.FindBy;\nimport org.openqa.selenium.support.PageFactory;\n\npublic class ${className} {\n    WebDriver driver;\n\n${fields}\n\n    public ${className}(WebDriver driver){\n        this.driver = driver;\n        PageFactory.initElements(driver, this);\n    }\n\n${methods}\n}\n`;
+      files[`${className}.java`] = content;
+      const steps = `import io.cucumber.java.en.When;\n\npublic class ${className}Steps {\n    private ${className} page;\n\n    @When("I click {string}")\n    public void i_click(String name){\n        // TODO: map name to page methods\n    }\n}\n`;
+      files[`${className}Steps.java`] = steps;
+      return files;
+    }
+    if(fw==='playwright' && lang==='javascript'){
+      const cls = [`class ${className} {`, `  constructor(page){`, `    this.page = page;`];
+      locs.forEach(l=>{ cls.push(`    this.${l.name} = page.locator("xpath=${esc(l.xpath)}");`); });
+      cls.push('  }');
+      locs.forEach(l=>{ cls.push(`  async click_${l.name}(){ await this.${l.name}.click(); }`); });
+      cls.push('}');
+      cls.push(`module.exports = { ${className} };`);
+      files[`${className}.js`] = cls.join('\n');
+      const steps = `const { When } = require('@cucumber/cucumber');\n\nWhen('I click {string}', async function(name){\n  // TODO: map name to page actions\n});\n`;
+      files[`${className}.steps.js`] = steps;
+      return files;
+    }
+    files['locators.txt'] = locs.map(l=>`${l.name}: ${l.xpath}`).join('\n');
+    files['steps.txt'] = locs.map(l=>`When I click ${l.name}`).join('\n');
+    return files;
+  }
+
+  function wireUI(){
+    const btnRender = NS.$('#btnRender'); if(btnRender) btnRender.addEventListener('click', NS.renderPreviewFromPaste);
+    const btnClear = NS.$('#btnClear'); if(btnClear) btnClear.addEventListener('click', NS.clearAll);
+    const btnOpen = NS.$('#btnOpenFile'); if(btnOpen) btnOpen.addEventListener('click', ()=> { const hf = NS.$('#hiddenFile'); if(hf) hf.click(); });
+    const hiddenFile = NS.$('#hiddenFile'); if(hiddenFile) { hiddenFile.addEventListener('change', (e)=>{ const f = e.target.files && e.target.files[0]; if(!f) return; const r = new FileReader(); r.onload = ev => { const ta = NS.$('#pasteBox'); if(ta) { ta.value = ev.target.result; NS.renderPreviewFromPaste(); } }; r.readAsText(f); }); }
+    const btnGen = NS.$('#btnGenPOM'); if(btnGen) { btnGen.addEventListener('click', ()=>{ const selected = getSelectedLocatorsForGeneration(); if(!selected.length) return; const fwEl = document.querySelector('.sw[data-fw].active'); const langEl = document.querySelector('.sw[data-lang].active'); const fw = fwEl ? fwEl.dataset.fw : 'selenium'; const lang = langEl ? langEl.dataset.lang : 'java'; const files = buildArtifacts({ fw, lang, locs: selected }); const out = NS.$('#output'); if(out) { out.value = Object.keys(files).map(k=>`// ==== ${k} ====\n${files[k]}\n`).join('\n\n'); } toast('Generated POM preview', 'success'); }); }
+    const btnDownloadPOM = NS.$('#btnDownloadPOM'); if(btnDownloadPOM) { btnDownloadPOM.addEventListener('click', ()=>{ const selected = getSelectedLocatorsForGeneration(); if(!selected.length) return; const fwEl = document.querySelector('.sw[data-fw].active'); const langEl = document.querySelector('.sw[data-lang].active'); const fw = fwEl ? fwEl.dataset.fw : 'selenium'; const lang = langEl ? langEl.dataset.lang : 'java'; const files = buildArtifacts({ fw, lang, locs: selected }); const keys = Object.keys(files).filter(k => k !== 'README.md'); if(keys.length===0) { toast('Nothing to download', 'error'); return; } const primary = keys[0]; downloadFile(primary, files[primary]); }); }
+    const btnDownloadSteps = NS.$('#btnDownloadSteps'); if(btnDownloadSteps) { btnDownloadSteps.addEventListener('click', ()=>{ const selected = getSelectedLocatorsForGeneration(); if(!selected.length) return; const fwEl = document.querySelector('.sw[data-fw].active'); const langEl = document.querySelector('.sw[data-lang].active'); const fw = fwEl ? fwEl.dataset.fw : 'selenium'; const lang = langEl ? langEl.dataset.lang : 'java'; const files = buildArtifacts({ fw, lang, locs: selected }); const stepsKey = Object.keys(files).find(k=>/step/i.test(k)); if(!stepsKey) { toast('No steps file generated', 'error'); return; } downloadFile(stepsKey, files[stepsKey]); }); }
+ const btnZip = NS.$('#btnZipAll');
+if (btnZip) {
+  btnZip.addEventListener('click', async () => {
+    // Auto-load JSZip dynamically if missing
+    if (!window.JSZip) {
+      toast("Loading JSZip library…", "info");
+      const ok = await new Promise((resolve) => {
+        const s = document.createElement("script");
+        s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+        s.async = true;
+        s.onload = () => resolve(true);
+        s.onerror = () => resolve(false);
+        document.head.appendChild(s);
+      });
+      if (!ok || !window.JSZip) {
+        toast("Failed to load JSZip — check internet or run via localhost", "error");
+        return;
+      }
+    }
+
+    // Now JSZip should be available
+    const selected = getSelectedLocatorsForGeneration();
+    if (!selected.length) return;
+
+    const fwEl = document.querySelector('.sw[data-fw].active');
+    const langEl = document.querySelector('.sw[data-lang].active');
+    const fw = fwEl ? fwEl.dataset.fw : 'selenium';
+    const lang = langEl ? langEl.dataset.lang : 'java';
+
+    const files = buildArtifacts({ fw, lang, locs: selected });
+
+    try {
+      const zip = new JSZip();
+      Object.keys(files).forEach(k => zip.file(k, files[k] || ""));
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const name = `adhy-artifacts-${fw}-${lang}.zip`;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast('ZIP downloaded', 'success');
+    } catch (e) {
+      console.error('ZIP error', e);
+      toast('ZIP generation failed', 'error');
+    }
+  });
+}const tabs = NS.$$('#locatorTabs .chip'); tabs.forEach(t=>{ t.addEventListener('click', ()=>{ tabs.forEach(x=>x.classList.remove('active')); t.classList.add('active'); renderLocatorList(t.dataset.paneltab || 'basic'); }); });
+    const switches = NS.$$('.switch .sw'); switches.forEach(sw => { sw.addEventListener('click', ()=>{ const siblings = sw.parentElement.querySelectorAll('.sw'); siblings.forEach(s => s.classList.remove('active')); sw.classList.add('active'); }); });
+    ensureDownloadOutputButton();
+  }
+
+  function downloadFile(name, content){ try { const blob = new Blob([content], { type: 'text/plain' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); toast(`Downloaded ${name}`, 'success'); } catch(e) { toast('Download failed', 'error'); } }
+
+  function ensureDownloadOutputButton(){ const out = NS.$('#output'); if(!out) return; if(document.getElementById('btnDownloadOutput')) return; const btn = document.createElement('button'); btn.id = 'btnDownloadOutput'; btn.className = 'btn'; btn.textContent = 'Download Output'; btn.style.cssText = 'margin-top:8px;width:auto;padding:8px 12px'; out.parentNode.insertBefore(btn, out.nextSibling); btn.addEventListener('click', ()=>{ const txt = out.value || ''; if(!txt) { toast('Nothing to download', 'error'); return; } const a = document.createElement('a'); const blob = new Blob([txt], { type:'text/plain' }); a.href = URL.createObjectURL(blob); a.download = 'adhy-output.txt'; document.body.appendChild(a); a.click(); a.remove(); toast('Output downloaded', 'success'); }); }
+
+  function start(){
+    NS.UI.preview = getPreviewEl();
+    NS.UI.locTabs = NS.$('#locatorTabs');
+    wireUI();
+    const prev = getPreviewEl();
+    if(prev && prev.tagName && prev.tagName.toLowerCase() === 'iframe') {
+      const checkIframeReady = () => { try { if(prev.contentDocument && prev.contentDocument.readyState === 'complete') { NS.attachHandlersToPreview(); } } catch(e) {} };
+      prev.addEventListener('load', checkIframeReady);
+      checkIframeReady();
+    }
+    const cont = NS.$('#locator-list') || NS.$('#locList');
+    if(cont) { cont.innerHTML = `<div class="small" style="color:#9db0c5;padding:20px;text-align:center"> Paste HTML → Render Preview → Click elements or Auto-extract → Select elements → Generate POM/Steps </div>`; }
+    setupDragAndDrop();
+    console.info('Offline XPath Studio loaded —', NS.version);
+  }
+
+  function setupDragAndDrop(){
+    const dropZone = NS.$('#dropZone');
+    const prev = NS.$('#preview');
+    if(!dropZone || !prev) return;
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => { dropZone.addEventListener(eventName, preventDefaults, false); prev.addEventListener(eventName, preventDefaults, false); });
+    function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+    ['dragenter', 'dragover'].forEach(eventName => { dropZone.addEventListener(eventName, ()=> { dropZone.style.borderColor = 'var(--accent)'; dropZone.style.background = 'rgba(124,92,255,0.1)'; }); });
+    ['dragleave', 'drop'].forEach(eventName => { dropZone.addEventListener(eventName, ()=> { dropZone.style.borderColor = '#3a475a'; dropZone.style.background = 'transparent'; }); });
+    dropZone.addEventListener('drop', handleDrop);
+    prev.addEventListener('drop', handleDrop);
+    function handleDrop(e) {
+      const dt = e.dataTransfer; const files = dt.files;
+      if(files.length > 0) {
+        const file = files[0];
+        if(file.name.match(/\.(html|htm|xhtml|txt)$/i)) {
+          const reader = new FileReader();
+          reader.onload = (ev) => { const ta = NS.$('#pasteBox'); if(ta) { ta.value = ev.target.result; NS.renderPreviewFromPaste(); } };
+          reader.readAsText(file);
+        } else { toast('Please drop an HTML file', 'error'); }
+      }
+    }
+  }
+
+  if(document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', start); } else { start(); }
+
+  NS._internal = { genBasicList, genWildList, genAxesList, genFuncList, genSfList, genPegaList, pickBestForElement, buildLocatorObjectFromElement, buildShadowSnippetsForElement };
+})(window);
+</script>
+</body>
+</html>
