@@ -1,0 +1,383 @@
+//Base page
+import org.openqa.selenium.*;
+import org.openqa.selenium.support.*;
+import org.openqa.selenium.support.ui.*;
+import java.time.Duration;
+
+public class BasePage {
+
+    protected WebDriver driver;
+    protected WebDriverWait wait;
+
+    public BasePage(WebDriver driver) {
+        this.driver = driver;
+        this.wait = new WebDriverWait(driver, Duration.ofSeconds(40));
+        PageFactory.initElements(driver, this);
+    }
+
+    protected void click(WebElement element, String name) {
+        try {
+            wait.until(ExpectedConditions.elementToBeClickable(element)).click();
+            LoggerUtil.info("Clicked: " + name);
+        } catch (Exception e) {
+            ScreenshotUtil.capture(driver, name);
+            throw e;
+        }
+    }
+
+    protected void type(WebElement element, String value, String name) {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(element)).sendKeys(value);
+            LoggerUtil.info("Entered " + name);
+        } catch (Exception e) {
+            ScreenshotUtil.capture(driver, name);
+            throw e;
+        }
+    }
+
+    protected void waitVisible(WebElement element, String name) {
+        try {
+            wait.until(ExpectedConditions.visibilityOf(element));
+        } catch (Exception e) {
+            ScreenshotUtil.capture(driver, name);
+            throw e;
+        }
+    }
+}
+
+
+//loggerutil
+public class LoggerUtil {
+    public static void info(String msg) {
+        System.out.println("[INFO] " + msg);
+    }
+    public static void error(String msg) {
+        System.err.println("[ERROR] " + msg);
+    }
+}
+
+
+//Sshot util
+
+import org.openqa.selenium.*;
+import java.io.File;
+import org.apache.commons.io.FileUtils;
+
+public class ScreenshotUtil {
+
+    public static void capture(WebDriver driver, String name) {
+        try {
+            File src = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
+            FileUtils.copyFile(src,
+                new File("screenshots/" + name + "_" + System.currentTimeMillis() + ".png"));
+        } catch (Exception ignored) {}
+    }
+}
+
+
+//retryutil
+
+import java.util.function.Supplier;
+
+public class RetryUtil {
+
+    public static boolean retry(int attempts, int waitSec, Supplier<Boolean> condition) {
+        for (int i = 1; i <= attempts; i++) {
+            try {
+                if (condition.get()) return true;
+                Thread.sleep(waitSec * 1000);
+            } catch (Exception ignored) {}
+        }
+        return false;
+    }
+}
+
+
+Frame shadow util
+
+
+import org.openqa.selenium.*;
+import org.openqa.selenium.support.ui.*;
+
+public class FrameShadowUtil {
+
+    WebDriver driver;
+    WebDriverWait wait;
+
+    public FrameShadowUtil(WebDriver driver) {
+        this.driver = driver;
+        this.wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+    }
+
+    public void switchToSoftphoneFrame() {
+        driver.switchTo().defaultContent();
+        wait.until(ExpectedConditions.frameToBeAvailableAndSwitchToIt("softphone-frame"));
+    }
+}
+
+
+
+//driver manager util
+
+
+import org.openqa.selenium.*;
+import org.openqa.selenium.chrome.*;
+import java.util.logging.*;
+
+public class DriverManager {
+
+    public static WebDriver getDriver() {
+
+        ChromeOptions options = new ChromeOptions();
+
+        LoggingPreferences logs = new LoggingPreferences();
+        logs.enable(LogType.PERFORMANCE, Level.ALL);
+
+        options.setCapability("goog:loggingPrefs", logs);
+        return new ChromeDriver(options);
+    }
+}
+
+//Softphone background util
+
+import org.openqa.selenium.*;
+import org.openqa.selenium.logging.*;
+import org.json.*;
+
+public class SoftphoneBackgroundUrlUtil {
+
+    WebDriver driver;
+
+    public SoftphoneBackgroundUrlUtil(WebDriver driver) {
+        this.driver = driver;
+    }
+
+    public String fetchBackgroundUrl() {
+
+        for (LogEntry entry :
+                driver.manage().logs().get(LogType.PERFORMANCE)) {
+            try {
+                JSONObject msg = new JSONObject(entry.getMessage())
+                        .getJSONObject("message")
+                        .getJSONObject("params")
+                        .getJSONObject("request");
+
+                String url = msg.getString("url");
+
+                if (url.contains("softphone")
+                        || url.contains("cti")
+                        || url.contains("background")) {
+                    LoggerUtil.info("Background URL found: " + url);
+                    return url;
+                }
+            } catch (Exception ignored) {}
+        }
+        return null;
+    }
+}
+
+
+//toolbar recovery util
+
+import org.openqa.selenium.*;
+
+public class ToolbarRecoveryUtil {
+
+    WebDriver driver;
+
+    public ToolbarRecoveryUtil(WebDriver driver) {
+        this.driver = driver;
+    }
+
+    public void recover(String url) {
+
+        String parent = driver.getWindowHandle();
+
+        try {
+            driver.switchTo().newWindow(WindowType.TAB);
+            driver.get(url);
+
+            if (driver.getPageSource().contains("Proceed"))
+                driver.findElement(By.xpath("//button[contains(text(),'Proceed')]")).click();
+
+            if (driver.getPageSource().contains("Retry"))
+                driver.findElement(By.xpath("//button[text()='Retry']")).click();
+
+            if (driver.getPageSource().contains("500"))
+                ScreenshotUtil.capture(driver, "500_Error");
+
+        } finally {
+            driver.close();
+            driver.switchTo().window(parent);
+            driver.navigate().refresh();
+        }
+    }
+}
+
+//Toolbar autorecovery
+public class ToolbarAutoRecoveryManager {
+
+    WebDriver driver;
+
+    public ToolbarAutoRecoveryManager(WebDriver driver) {
+        this.driver = driver;
+    }
+
+    public void recoverIfNeeded() {
+
+        SoftphoneBackgroundUrlUtil urlUtil =
+                new SoftphoneBackgroundUrlUtil(driver);
+
+        String bgUrl = urlUtil.fetchBackgroundUrl();
+
+        if (bgUrl != null) {
+            new ToolbarRecoveryUtil(driver).recover(bgUrl);
+        } else {
+            ScreenshotUtil.capture(driver, "BG_URL_NOT_FOUND");
+        }
+    }
+}
+
+//soft phone toolbarpage
+
+import org.openqa.selenium.*;
+import org.openqa.selenium.support.FindBy;
+
+public class SoftphoneToolbarPage extends BasePage {
+
+    public SoftphoneToolbarPage(WebDriver driver) {
+        super(driver);
+    }
+
+    @FindBy(xpath = "//span[text()='Offline']")
+    WebElement status;
+
+    public boolean isLoaded() {
+        try {
+            waitVisible(status, "Toolbar Status");
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+}
+
+
+//locate customer popup
+
+import java.util.Map;
+import org.openqa.selenium.*;
+import org.openqa.selenium.support.FindBy;
+
+public class LocateCustomerPopupPage extends BasePage {
+
+    public LocateCustomerPopupPage(WebDriver driver) {
+        super(driver);
+    }
+
+    @FindBy(xpath = "//h2[text()='Locate Customer']")
+    WebElement header;
+
+    @FindBy(name = "accountNumber") WebElement acc;
+    @FindBy(name = "ssn") WebElement ssn;
+    @FindBy(name = "dob") WebElement dob;
+    @FindBy(name = "phone") WebElement phone;
+    @FindBy(xpath = "//button[text()='Verify']") WebElement verify;
+
+    public void verifyPopup() {
+        waitVisible(header, "Locate Customer");
+    }
+
+    public void enter(Map<String,String> data) {
+        type(acc, data.get("Account Number"), "Account");
+        type(ssn, data.get("SSN"), "SSN");
+        type(dob, data.get("DOB"), "DOB");
+        type(phone, data.get("Phone Number"), "Phone");
+    }
+
+    public void verifyClick() {
+        click(verify, "Verify");
+    }
+}
+
+
+//verbal password 
+import org.openqa.selenium.*;
+import org.openqa.selenium.support.FindBy;
+
+public class VerbalPasswordPopupPage extends BasePage {
+
+    public VerbalPasswordPopupPage(WebDriver driver) {
+        super(driver);
+    }
+
+    @FindBy(xpath = "//h2[text()='Verbal Password']")
+    WebElement header;
+
+    @FindBy(name = "verbalPassword")
+    WebElement password;
+
+    @FindBy(xpath = "//button[text()='Verify']")
+    WebElement verify;
+
+    public boolean isDisplayed() {
+        try {
+            waitVisible(header, "Verbal Password");
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public void verifyPassword(String pwd) {
+        type(password, pwd, "Verbal Password");
+        click(verify, "Verify Password");
+    }
+}
+
+
+//wrapup page
+
+import org.openqa.selenium.*;
+import org.openqa.selenium.support.FindBy;
+
+public class WrapUpPage extends BasePage {
+
+    public WrapUpPage(WebDriver driver) {
+        super(driver);
+    }
+
+    @FindBy(xpath = "//button[text()='End Call']")
+    WebElement endCall;
+
+    @FindBy(xpath = "//button[text()='Wrap Up']")
+    WebElement wrapUp;
+
+    public void closeCall() {
+        click(endCall, "End Call");
+        click(wrapUp, "Wrap Up");
+    }
+}
+
+//
+
+
+SoftphoneToolbarPage toolbar = new SoftphoneToolbarPage(driver);
+
+if (!toolbar.isLoaded()) {
+    new ToolbarAutoRecoveryManager(driver).recoverIfNeeded();
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
