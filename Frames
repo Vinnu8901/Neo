@@ -1,0 +1,124 @@
+package core;
+
+import io.cucumber.java.*;
+import org.openqa.selenium.*;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.support.ui.*;
+
+import java.time.Duration;
+
+/**
+ * ============================
+ * DRIVER MANAGER (Thread Safe)
+ * ============================
+ */
+class DriverManager {
+
+    private static final ThreadLocal<WebDriver> DRIVER = new ThreadLocal<>();
+
+    public static void setDriver(WebDriver driver) {
+        DRIVER.set(driver);
+    }
+
+    public static WebDriver getDriver() {
+        return DRIVER.get();
+    }
+
+    public static void unload() {
+        if (DRIVER.get() != null) {
+            DRIVER.get().quit();
+            DRIVER.remove();
+        }
+    }
+}
+
+/**
+ * ============================
+ * DRIVER FACTORY
+ * ============================
+ */
+class DriverFactory {
+
+    public static WebDriver createDriver() {
+        WebDriver driver = new ChromeDriver();
+        driver.manage().window().maximize();
+        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(10));
+        return driver;
+    }
+}
+
+/**
+ * ============================
+ * BASE PAGE
+ * ============================
+ */
+class BasePage {
+
+    protected WebDriver driver;
+    protected WebDriverWait wait;
+
+    // ZERO-ARG constructor (Cucumber safe)
+    public BasePage() {
+        this.driver = DriverManager.getDriver();
+        this.wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+    }
+
+    protected void click(By locator) {
+        wait.until(ExpectedConditions.elementToBeClickable(locator)).click();
+    }
+
+    protected void type(By locator, String text) {
+        WebElement el = wait.until(ExpectedConditions.visibilityOfElementLocated(locator));
+        el.clear();
+        el.sendKeys(text);
+    }
+}
+
+/**
+ * ============================
+ * HOOKS
+ * ============================
+ */
+public class Hooks {
+
+    @Before
+    public void beforeScenario(Scenario scenario) {
+        WebDriver driver = DriverFactory.createDriver();
+        DriverManager.setDriver(driver);
+        System.out.println("Driver started: " + driver);
+    }
+
+    @AfterStep
+    public void afterStep(Scenario scenario) {
+        if (scenario.isFailed()) {
+            byte[] screenshot =
+                    ((TakesScreenshot) DriverManager.getDriver())
+                            .getScreenshotAs(OutputType.BYTES);
+            scenario.attach(screenshot, "image/png", "FAILED_STEP");
+        }
+    }
+
+    @After
+    public void afterScenario() {
+        DriverManager.unload();
+        System.out.println("Driver closed");
+    }
+}
+
+/**
+ * ============================
+ * SAMPLE STEP DEFINITION
+ * ============================
+ */
+class ToolBarSteps extends BasePage {
+
+    // ZERO-ARG constructor ✔
+    public ToolBarSteps() {
+        super();
+    }
+
+    @Given("user opens Salesforce")
+    public void openSalesforce() {
+        driver.get("https://login.salesforce.com");
+    }
+}
