@@ -337,4 +337,813 @@
         if(label) return (label.innerText || label.textContent || '').trim();
       }
 
-      // 3
+      // 3. placeholder (for inputs)
+      const placeholder = el.getAttribute('placeholder');
+      if(placeholder && placeholder.trim()) return placeholder.trim();
+
+      // 4. visible text content
+      const text = (el.innerText || el.textContent || '').trim();
+      if(text && text.length < 100) return text;
+
+      // 5. title
+      const title = el.getAttribute('title');
+      if(title && title.trim()) return title.trim();
+
+      return null;
+    } catch(e){ return null; }
+  }
+
+  function genPlaywrightLocators(el){
+    try {
+      const locators = {};
+      const tag = el.tagName.toLowerCase();
+      const id = el.id;
+      const dataTestId = el.getAttribute('data-testid');
+      const ariaLabel = el.getAttribute('aria-label');
+      const placeholder = el.getAttribute('placeholder');
+      const name = el.getAttribute('name');
+      const role = inferRole(el);
+      const accessibleName = getAccessibleName(el);
+      const text = (el.innerText || el.textContent || '').trim().slice(0,60);
+
+      // 1. getByRole
+      if(role && accessibleName){
+        locators.getByRole = `page.getByRole('${role}', { name: '${accessibleName.replace(/'/g, "\\'")}' })`;
+      } else if(role){
+        locators.getByRole = `page.getByRole('${role}')`;
+      }
+
+      // 2. getByTestId
+      if(dataTestId){
+        locators.getByTestId = `page.getByTestId('${dataTestId}')`;
+      }
+
+      // 3. getByLabel
+      if(ariaLabel){
+        locators.getByLabel = `page.getByLabel('${ariaLabel.replace(/'/g, "\\'")}')`;
+      } else if(id){
+        const label = el.ownerDocument.querySelector(`label[for="${id}"]`);
+        if(label){
+          const labelText = (label.innerText || label.textContent || '').trim();
+          if(labelText) locators.getByLabel = `page.getByLabel('${labelText.replace(/'/g, "\\'")}')`;
+        }
+      }
+
+      // 4. getByPlaceholder
+      if(placeholder){
+        locators.getByPlaceholder = `page.getByPlaceholder('${placeholder.replace(/'/g, "\\'")}')`;
+      }
+
+      // 5. getByText
+      if(text && ['button','a','span','div'].includes(tag)){
+        locators.getByText = `page.getByText('${text.replace(/'/g, "\\'")}')`;
+      }
+
+      // 6. CSS Selector
+      if(id){
+        locators.css = `page.locator('#${id}')`;
+      } else if(dataTestId){
+        locators.css = `page.locator('[data-testid="${dataTestId}"]')`;
+      }
+
+      // 7. XPath (fallback)
+      locators.xpath = `page.locator('xpath=//${tag}${id ? `[@id="${id}"]` : ''}${dataTestId ? `[@data-testid="${dataTestId}"]` : ''}')`;
+
+      return locators;
+    } catch(e){
+      console.error('genPlaywrightLocators error', e);
+      return {};
+    }
+  }
+
+  // ========== XPath GENERATION (original) ==========
+  function xpathLiteral(s){
+    s = String(s||'');
+    if (s.indexOf('"') === -1) return `"${s}"`;
+    if (s.indexOf("'") === -1) return `'${s}'`;
+    const parts = s.split('"'), out = [];
+    for (let i=0;i<parts.length;i++){
+      if (parts[i] !== '') out.push(`"${parts[i]}"`);
+      if (i < parts.length - 1) out.push(`'"'`);
+    }
+    return `concat(${out.join(',')})`;
+  }
+
+  function getAttr(el,k){ try{ return el.getAttribute && el.getAttribute(k); } catch(e){ return null; } }
+  function firstText(el){ try{ return (el.innerText||el.textContent||'').trim(); } catch(e){ return ''; } }
+  function dedupe(arr){ const out=[], s=new Set(); for(const i of arr){ const k=String(i||'').trim(); if(!k || s.has(k)) continue; s.add(k); out.push(k);} return out; }
+
+  function genBasicXPath(el){
+    const tag = el.tagName.toLowerCase(); const out = [];
+    const attrs = ['id','data-testid','data-test-id','data-qa','name','aria-label','title','placeholder'];
+    for(const a of attrs){ const v = getAttr(el, a); if(v) out.push(`//${tag}[@${a}=${xpathLiteral(v)}]`); }
+    const txt = firstText(el); if(txt) out.push(`//${tag}[normalize-space(.)=${xpathLiteral(txt)}]`);
+    out.push(`//${tag}`);
+    return dedupe(out);
+  }
+
+  function genCSSSelector(el){
+    try{
+      if(!el || !el.tagName) return '';
+      const tag = el.tagName.toLowerCase();
+      if(el.id) return `${tag}#${el.id}`;
+      const dataTestId = getAttr(el, 'data-testid');
+      if(dataTestId) return `${tag}[data-testid="${dataTestId}"]`;
+      const name = getAttr(el, 'name');
+      if(name) return `${tag}[name="${name}"]`;
+      return tag;
+    }catch(e){ return ''; }
+  }
+
+  function shouldSkip(el){
+    try{
+      if(!el || el.nodeType !== 1) return true;
+      if(el.hasAttribute && el.hasAttribute('hidden')) return true;
+      const s = (getAttr(el,'style')||'').toLowerCase();
+      if(s && (/display\s*:\s*none|visibility\s*:\s*hidden/).test(s)) return true;
+      if(el.tagName && el.tagName.toLowerCase()==='script') return true;
+    }catch(e){}
+    return false;
+  }
+
+  function collectCandidateElements(doc){
+    const sel = ['input','button','a','select','textarea','[role="button"]','[data-testid]','label','span[data-testid]'].join(',');
+    let list = [];
+    try { list = Array.from(doc.querySelectorAll(sel)); } catch(e){ list = []; }
+    list = list.filter(el => !shouldSkip(el));
+    const seen = new Set(), out = [];
+    list.forEach(el=>{
+      try {
+        const sig = [el.tagName.toLowerCase(), el.id||'', getAttr(el,'name')||'', firstText(el).slice(0,40)].join('|');
+        if(seen.has(sig)) return;
+        seen.add(sig);
+        out.push(el);
+      } catch(e){}
+    });
+    return out;
+  }
+
+  function buildLocatorObject(el){
+    return {
+      _uid: uid('loc'),
+      tag: el.tagName.toLowerCase(),
+      text: firstText(el),
+      elRef: el,
+      xpath: genBasicXPath(el),
+      css: genCSSSelector(el),
+      playwright: genPlaywrightLocators(el),
+      name: (firstText(el) || el.tag || 'elem').replace(/\s+/g,'_').replace(/[^A-Za-z0-9_]/g,'').slice(0,40) || 'elem'
+    };
+  }
+
+  // ========== UI RENDERING ==========
+  function makeElementRow(elObj){
+    const row = document.createElement('div');
+    row.className = 'element-row';
+    row.dataset.uid = elObj._uid;
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'elem-check';
+    cb.dataset.uid = elObj._uid;
+    cb.checked = true;
+
+    const toggle = document.createElement('button');
+    toggle.textContent = '▶';
+    toggle.style.cssText = 'width:30px;height:30px;border-radius:6px;border:1px solid #e6ecf5;background:#f8fafc;cursor:pointer';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'flex:0 0 auto;font-weight:700;min-width:80px';
+    const labelText = elObj.text || elObj.tag;
+    title.textContent = labelText.length>40 ? labelText.slice(0,40)+'…' : labelText;
+
+    const nameInput = document.createElement('input');
+    nameInput.className = 'name-input';
+    nameInput.type = 'text';
+    nameInput.value = elObj.name || '';
+    nameInput.style.cssText = 'width:120px;font-size:12px';
+    nameInput.addEventListener('change', (e)=>{ elObj.name = e.target.value.replace(/\s+/g,'_').replace(/[^A-Za-z0-9_]/g,'').slice(0,40); });
+
+    header.appendChild(cb);
+    header.appendChild(toggle);
+    header.appendChild(title);
+    header.appendChild(nameInput);
+
+    const body = document.createElement('div');
+    body.style.cssText = 'display:none;flex-direction:column;gap:6px';
+
+    // Playwright methods
+    const pwSection = document.createElement('div');
+    pwSection.className = 'pw-methods';
+    pwSection.innerHTML = '<div style="font-weight:700;font-size:12px;color:#1f2b46">Playwright Methods:</div>';
+
+    Object.keys(elObj.playwright).forEach(method => {
+      const code = elObj.playwright[method];
+      if(!code) return;
+      const item = document.createElement('div');
+      item.className = 'pw-method-item';
+      
+      const label = document.createElement('div');
+      label.className = 'pw-label';
+      label.textContent = method;
+      
+      const codeDiv = document.createElement('div');
+      codeDiv.className = 'pw-code';
+      codeDiv.title = code;
+      codeDiv.textContent = code;
+      
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'btn';
+      copyBtn.textContent = 'Copy';
+      copyBtn.style.cssText = 'padding:3px 6px;width:auto;font-size:11px';
+      copyBtn.onclick = (e) => { e.stopPropagation(); copyText(code); };
+      
+      item.appendChild(label);
+      item.appendChild(codeDiv);
+      item.appendChild(copyBtn);
+      pwSection.appendChild(item);
+    });
+
+    // XPath / CSS
+    const otherSection = document.createElement('div');
+    otherSection.style.cssText = 'margin-top:8px;padding:8px;background:#f0f4f8;border-radius:8px';
+    otherSection.innerHTML = `
+      <div style="font-weight:700;font-size:12px;color:#1f2b46;margin-bottom:6px">Other Locators:</div>
+      <div class="pw-method-item">
+        <div class="pw-label">XPath</div>
+        <div class="pw-code">${(elObj.xpath && elObj.xpath[0] || '(none)').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+        <button class="btn" style="padding:3px 6px;width:auto;font-size:11px" onclick="copyText('${(elObj.xpath && elObj.xpath[0] || '').replace(/'/g, "\\'")}')">Copy</button>
+      </div>
+      <div class="pw-method-item">
+        <div class="pw-label">CSS</div>
+        <div class="pw-code">${elObj.css || '(none)'}</div>
+        <button class="btn" style="padding:3px 6px;width:auto;font-size:11px" onclick="copyText('${(elObj.css || '').replace(/'/g, "\\'")}')">Copy</button>
+      </div>
+    `;
+    otherSection.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const code = btn.previousElementSibling.title || btn.previousElementSibling.textContent;
+        copyText(code);
+      });
+    });
+
+    body.appendChild(pwSection);
+    body.appendChild(otherSection);
+
+    row.appendChild(header);
+    row.appendChild(body);
+
+    toggle.addEventListener('click', ()=>{
+      body.style.display = body.style.display === 'none' ? 'flex' : 'none';
+      toggle.textContent = body.style.display === 'none' ? '▶' : '▼';
+    });
+
+    return row;
+  }
+
+  function renderLocatorList(panel){
+    const cont = NS.$('#locator-list');
+    if(!cont) return;
+    cont.innerHTML = '';
+
+    NS.CURRENT_LOCATORS.forEach((elObj) => {
+      const row = makeElementRow(elObj);
+      cont.appendChild(row);
+    });
+
+    const footer = document.createElement('div');
+    footer.style.cssText = 'margin-top:6px;color:#6b7280;font-size:12px';
+    footer.textContent = `${NS.CURRENT_LOCATORS.length} elements captured`;
+    cont.appendChild(footer);
+
+    const locCount = NS.$('#loc-count');
+    if(locCount) locCount.textContent = `${NS.CURRENT_LOCATORS.length} locators`;
+  }
+
+  NS.extractAllLocators = function(){
+    const prevDoc = getPreviewDoc();
+    if(!prevDoc || !prevDoc.body) { toast('Preview not ready', 'error'); return; }
+    const els = collectCandidateElements(prevDoc);
+    NS.CURRENT_LOCATORS = els.map(el => buildLocatorObject(el));
+    renderLocatorList();
+    toast(`Extracted ${NS.CURRENT_LOCATORS.length} elements`, 'success');
+  };
+
+  function getPreviewDoc(){
+    const f = NS.$('#preview');
+    if(f && f.tagName && f.tagName.toLowerCase() === 'iframe'){
+      try { if(f.contentDocument && f.contentDocument.body) return f.contentDocument; } catch(e){}
+    }
+    return window._PARSER_DOC || document;
+  }
+
+  NS.renderPreviewFromPaste = function(){
+    const ta = NS.$('#pasteBox');
+    if(!ta){ toast('Input not found', 'error'); return; }
+    const html = ta.value || '';
+    if(!html.trim()) { toast('Paste HTML first', 'error'); return; }
+
+    NS.CURRENT_HTML = html;
+    const prev = NS.$('#preview');
+    if(prev && prev.tagName && prev.tagName.toLowerCase() === 'iframe'){
+      let src = html || '<!doctype html><body><h3>No content</h3></body>';
+      try{ src = src.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, ''); }catch(e){}
+      try { prev.srcdoc = src; } catch(e){ toast('Preview failed', 'error'); return; }
+      try { window._PARSER_DOC = (new DOMParser()).parseFromString(html,'text/html'); } catch(e){}
+      
+      const loadHandler = () => { NS.extractAllLocators(); };
+      prev.addEventListener('load', loadHandler, { once: true });
+      setTimeout(loadHandler, 500);
+      toast('Preview rendered', 'success');
+    }
+  };
+
+  function generatePlaywrightCode(){
+    const selected = getSelectedLocators();
+    if(!selected.length) { toast('Select elements first', 'error'); return; }
+
+    const code = [
+      "import { test, expect } from '@playwright/test';",
+      "",
+      "test('Generated test', async ({ page }) => {",
+      "  await page.goto('https://example.com');",
+      "",
+    ];
+
+    selected.forEach(elObj => {
+      const best = Object.values(elObj.playwright).find(x => x && x.includes('page.getByRole'));
+      const loc = best || Object.values(elObj.playwright).find(x => x);
+      if(loc){
+        code.push(`  // ${elObj.text || elObj.tag}`);
+        code.push(`  const ${elObj.name} = ${loc};`);
+        code.push(`  await ${elObj.name}.click();`);
+        code.push("");
+      }
+    });
+
+    code.push("});");
+    const out = NS.$('#output');
+    if(out) out.value = code.join('\n');
+    toast('Code generated', 'success');
+  }
+
+  function getSelectedLocators(){
+    const cont = NS.$('#locator-list');
+    if(!cont) return [];
+    const checks = Array.from(cont.querySelectorAll('.elem-check:checked'));
+    return checks.map(cb => {
+      const uid = cb.dataset.uid;
+      return NS.CURRENT_LOCATORS.find(x => x._uid === uid);
+    }).filter(Boolean);
+  }
+
+  function downloadFile(name, content){
+    const blob = new Blob([content], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    toast(`Downloaded ${name}`, 'success');
+  }
+
+  function wireUI(){
+    const btnRender = NS.$('#btnRender');
+    if(btnRender) btnRender.addEventListener('click', NS.renderPreviewFromPaste);
+
+    const btnClear = NS.$('#btnClear');
+    if(btnClear) btnClear.addEventListener('click', ()=>{
+      const ta = NS.$('#pasteBox');
+      if(ta) ta.value = '';
+      const out = NS.$('#output');
+      if(out) out.value = '';
+      NS.CURRENT_LOCATORS = [];
+      renderLocatorList();
+      toast('Cleared', 'info');
+    });
+
+    const btnOpen = NS.$('#btnOpenFile');
+    if(btnOpen) btnOpen.addEventListener('click', ()=> {
+      const lbl = document.getElementById('labelHtmlFile');
+      if(lbl) lbl.click();
+    });
+
+    const hiddenFile = NS.$('#hiddenFile');
+    if(hiddenFile) {
+      hiddenFile.addEventListener('change', (e)=>{
+        const f = e.target.files && e.target.files[0];
+        if(!f) return;
+        const r = new FileReader();
+        r.onload = ev => {
+          const ta = NS.$('#pasteBox');
+          if(ta) { ta.value = ev.target.result; NS.renderPreviewFromPaste(); }
+        };
+        r.readAsText(f);
+      });
+    }
+
+    const btnGen = NS.$('#btnGenPlaywright');
+    if(btnGen) btnGen.addEventListener('click', generatePlaywrightCode);
+
+    const btnDown = NS.$('#btnDownloadPlaywright');
+    if(btnDown) btnDown.addEventListener('click', ()=>{
+      const out = NS.$('#output');
+      if(!out || !out.value) { toast('Generate code first', 'error'); return; }
+      downloadFile('test.spec.ts', out.value);
+    });
+
+    const locCopyBtn = NS.$('#loc-copy');
+    if(locCopyBtn) {
+      locCopyBtn.addEventListener('click', ()=>{
+        const selected = getSelectedLocators();
+        if(!selected.length) { toast('Select elements', 'error'); return; }
+        const lines = selected.map(el => {
+          const loc = Object.values(el.playwright).find(x => x);
+          return loc || '';
+        }).filter(Boolean);
+        copyText(lines.join('\n'));
+      });
+    }
+
+    const locSelAll = NS.$('#loc-sel-all');
+    if(locSelAll) {
+      locSelAll.addEventListener('change', (e)=>{
+        const cont = NS.$('#locator-list');
+        if(cont) cont.querySelectorAll('.elem-check').forEach(cb => cb.checked = e.target.checked);
+      });
+    }
+
+    // Tab switching
+    const tabs = NS.$$('#locatorTabs .chip');
+    tabs.forEach(t => {
+      t.addEventListener('click', ()=>{
+        tabs.forEach(x => x.classList.remove('active'));
+        t.classList.add('active');
+      });
+    });
+
+    setupDragAndDrop();
+  }
+
+  function setupDragAndDrop(){
+    const dropZone = NS.$('#dropZone');
+    const prev = NS.$('#preview');
+    if(!dropZone || !prev) return;
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => {
+      dropZone.addEventListener(e, (ev) => { ev.preventDefault(); ev.stopPropagation(); });
+      prev.addEventListener(e, (ev) => { ev.preventDefault(); ev.stopPropagation(); });
+    });
+
+    function handleDrop(e) {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      if(files.length > 0) {
+        const file = files[0];
+        if(file.name.match(/\.(html|htm|txt)$/i)) {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            const ta = NS.$('#pasteBox');
+            if(ta) { ta.value = ev.target.result; NS.renderPreviewFromPaste(); }
+          };
+          reader.readAsText(file);
+        } else {
+          toast('Drop an HTML file', 'error');
+        }
+      }
+    }
+
+    dropZone.addEventListener('drop', handleDrop);
+    prev.addEventListener('drop', handleDrop);
+  }
+
+  function start(){
+    wireUI();
+    wireImageExtractor();
+    const cont = NS.$('#locator-list');
+    if(cont) cont.innerHTML = '<div style="color:#9db0c5;padding:20px;text-align:center;font-size:12px">Paste HTML → Click elements → Generate Playwright code</div>';
+    console.log('Playwright Studio loaded --', NS.version);
+  }
+
+  // ========== IMAGE EXTRACTOR (AI-Powered) ==========
+  let IMG_EXTRACTED = [];
+  let IMG_BASE64 = null;
+  let IMG_MIME = 'image/png';
+
+  function openImageExtractor(){
+    const modal = document.getElementById('imageExtractorModal');
+    if(modal) modal.style.display = 'block';
+  }
+
+  function closeImageExtractor(){
+    const modal = document.getElementById('imageExtractorModal');
+    if(modal) modal.style.display = 'none';
+  }
+
+  function setImagePreview(base64, mimeType){
+    IMG_BASE64 = base64;
+    IMG_MIME = mimeType;
+    const preview = document.getElementById('imgPreview');
+    const previewWrap = document.getElementById('imgPreviewWrap');
+    const dropZone = document.getElementById('imgDropZone');
+    if(preview){ preview.src = `data:${mimeType};base64,${base64}`; }
+    if(previewWrap) previewWrap.classList.remove('hidden');
+    if(dropZone) dropZone.classList.add('hidden');
+    // Reset results
+    IMG_EXTRACTED = [];
+    const resultsWrap = document.getElementById('imgResultsWrap');
+    if(resultsWrap) resultsWrap.classList.add('hidden');
+  }
+
+  function clearImage(){
+    IMG_BASE64 = null;
+    IMG_EXTRACTED = [];
+    const preview = document.getElementById('imgPreview');
+    const previewWrap = document.getElementById('imgPreviewWrap');
+    const dropZone = document.getElementById('imgDropZone');
+    const resultsWrap = document.getElementById('imgResultsWrap');
+    if(preview) preview.src = '';
+    if(previewWrap) previewWrap.classList.add('hidden');
+    if(dropZone) dropZone.classList.remove('hidden');
+    if(resultsWrap) resultsWrap.classList.add('hidden');
+  }
+
+  function fileToBase64(file){
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const dataUrl = e.target.result;
+        const base64 = dataUrl.split(',')[1];
+        resolve({ base64, mimeType: file.type || 'image/png' });
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function buildAnalysisPrompt(){
+    const focusButtons = document.getElementById('optButtons')?.checked;
+    const focusInputs = document.getElementById('optInputs')?.checked;
+    const focusLinks = document.getElementById('optLinks')?.checked;
+    const focusAll = document.getElementById('optAll')?.checked;
+
+    const targets = [];
+    if(focusAll || (!focusButtons && !focusInputs && !focusLinks)){
+      targets.push('all interactive and visible UI elements');
+    } else {
+      if(focusButtons) targets.push('buttons and clickable actions');
+      if(focusInputs) targets.push('input fields, text areas, dropdowns, checkboxes, radio buttons, forms');
+      if(focusLinks) targets.push('links and navigation items');
+    }
+
+    return `You are an expert frontend developer analyzing a UI screenshot to extract locators for automated testing with Playwright.
+
+Analyze this screenshot and identify all ${targets.join(', ')}.
+
+For each element found, return a JSON array. Each element must be an object with these exact fields:
+- "tag": HTML tag name (e.g. "button", "input", "a", "select", "textarea")
+- "type": input type if applicable (e.g. "text", "email", "password", "checkbox", "submit", null)
+- "text": visible text label or button text (empty string if none)
+- "placeholder": placeholder text if it's an input (null if none)
+- "id": a suggested id attribute value (use the visible label/text to infer, e.g. "email-input", "login-btn"; null if not obvious)
+- "ariaLabel": a suitable aria-label based on what you see (e.g. "Submit form", "Search")
+- "role": ARIA role (e.g. "button", "textbox", "link", "checkbox", "combobox")
+- "dataTestId": a suggested data-testid value (kebab-case, e.g. "login-button", "email-field"; null if not obvious)
+- "description": short description of where it appears and what it does
+
+Return ONLY a valid JSON array. No markdown fences, no explanation, just the raw JSON array.`;
+  }
+
+  async function analyzeImage(){
+    if(!IMG_BASE64){ toast('Upload an image first', 'error'); return; }
+
+    const statusEl = document.getElementById('aiStatus');
+    const statusText = document.getElementById('aiStatusText');
+    const analyzeBtn = document.getElementById('btnAnalyzeImage');
+    const resultsWrap = document.getElementById('imgResultsWrap');
+
+    if(statusEl) statusEl.classList.remove('hidden');
+    if(statusText) statusText.textContent = 'Sending to Claude AI…';
+    if(analyzeBtn){ analyzeBtn.disabled = true; analyzeBtn.textContent = '⏳ Analyzing…'; }
+    if(resultsWrap) resultsWrap.classList.add('hidden');
+
+    try {
+      const prompt = buildAnalysisPrompt();
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 2000,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: IMG_MIME, data: IMG_BASE64 } },
+              { type: 'text', text: prompt }
+            ]
+          }]
+        })
+      });
+
+      const data = await response.json();
+      if(!response.ok){ throw new Error(data.error?.message || 'API error'); }
+
+      const rawText = (data.content || []).map(c => c.type === 'text' ? c.text : '').join('');
+      if(statusText) statusText.textContent = 'Parsing results…';
+
+      let elements = [];
+      try {
+        const clean = rawText.replace(/```json|```/g, '').trim();
+        elements = JSON.parse(clean);
+        if(!Array.isArray(elements)) throw new Error('Not an array');
+      } catch(e){
+        // Try to extract JSON array from text
+        const match = rawText.match(/\[[\s\S]*\]/);
+        if(match){ try { elements = JSON.parse(match[0]); } catch(e2){ throw new Error('Could not parse AI response'); } }
+        else { throw new Error('Could not parse AI response as JSON'); }
+      }
+
+      IMG_EXTRACTED = elements.map(el => buildLocatorObjectFromAI(el));
+      renderImageResults(elements);
+      if(statusEl) statusEl.classList.add('hidden');
+      if(resultsWrap) resultsWrap.classList.remove('hidden');
+      toast(`Found ${elements.length} elements`, 'success');
+
+    } catch(err){
+      console.error('Image analysis error:', err);
+      toast('Analysis failed: ' + err.message, 'error');
+      if(statusEl) statusEl.classList.add('hidden');
+    } finally {
+      if(analyzeBtn){ analyzeBtn.disabled = false; analyzeBtn.textContent = '🔍 Analyze with Claude AI'; }
+    }
+  }
+
+  function buildLocatorObjectFromAI(el){
+    const tag = el.tag || 'div';
+    const id = el.id || null;
+    const dataTestId = el.dataTestId || null;
+    const ariaLabel = el.ariaLabel || el.text || null;
+    const placeholder = el.placeholder || null;
+    const role = el.role || el.tag || 'generic';
+    const text = el.text || '';
+    const type = el.type || null;
+
+    const playwright = {};
+
+    // getByRole
+    if(role && ariaLabel){
+      playwright.getByRole = `page.getByRole('${role}', { name: '${(ariaLabel).replace(/'/g,"\\'")}' })`;
+    } else if(role){
+      playwright.getByRole = `page.getByRole('${role}')`;
+    }
+
+    // getByTestId
+    if(dataTestId){ playwright.getByTestId = `page.getByTestId('${dataTestId}')`; }
+
+    // getByLabel
+    if(ariaLabel){ playwright.getByLabel = `page.getByLabel('${ariaLabel.replace(/'/g,"\\'")}')` ; }
+
+    // getByPlaceholder
+    if(placeholder){ playwright.getByPlaceholder = `page.getByPlaceholder('${placeholder.replace(/'/g,"\\'")}')` ; }
+
+    // getByText
+    if(text && ['button','a','span','div'].includes(tag)){
+      playwright.getByText = `page.getByText('${text.replace(/'/g,"\\'")}')`;
+    }
+
+    // CSS
+    if(id){ playwright.css = `page.locator('#${id}')` ; }
+    else if(dataTestId){ playwright.css = `page.locator('[data-testid="${dataTestId}"]')` ; }
+
+    // XPath
+    const xpathParts = [];
+    if(id) xpathParts.push(`//${tag}[@id="${id}"]`);
+    if(dataTestId) xpathParts.push(`//${tag}[@data-testid="${dataTestId}"]`);
+    if(ariaLabel) xpathParts.push(`//${tag}[@aria-label="${ariaLabel}"]`);
+    if(placeholder) xpathParts.push(`//${tag}[@placeholder="${placeholder}"]`);
+    if(text) xpathParts.push(`//${tag}[normalize-space(.)="${text}"]`);
+    xpathParts.push(`//${tag}`);
+
+    playwright.xpath = `page.locator('xpath=${xpathParts[0]}')`;
+
+    const cssSelector = id ? `${tag}#${id}` : dataTestId ? `${tag}[data-testid="${dataTestId}"]` : tag;
+
+    return {
+      _uid: uid('img'),
+      tag,
+      text,
+      description: el.description || '',
+      elRef: null,
+      xpath: xpathParts,
+      css: cssSelector,
+      playwright,
+      name: (text || ariaLabel || tag).replace(/\s+/g,'_').replace(/[^A-Za-z0-9_]/g,'').slice(0,40) || 'elem',
+      _fromImage: true
+    };
+  }
+
+  function renderImageResults(elements){
+    const list = document.getElementById('imgResultsList');
+    if(!list) return;
+    list.innerHTML = '';
+    elements.forEach((el, i) => {
+      const item = document.createElement('div');
+      item.className = 'ai-result-item';
+      item.innerHTML = `
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" class="img-elem-check" data-idx="${i}" checked style="margin:0">
+          <span class="ai-result-tag">${el.tag || 'elem'}</span>
+          <strong style="font-size:13px">${(el.text || el.ariaLabel || el.placeholder || '(no label)').slice(0,60)}</strong>
+          ${el.role ? `<span style="font-size:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:4px;padding:1px 5px;color:#166534">${el.role}</span>` : ''}
+        </div>
+        <div style="color:#6b7280;font-size:11px">${el.description || ''}</div>
+        <div style="font-family:ui-monospace,Menlo,monospace;font-size:10px;color:#4338ca;background:#eef2ff;border-radius:4px;padding:3px 6px">${IMG_EXTRACTED[i]?.playwright?.getByRole || IMG_EXTRACTED[i]?.playwright?.getByLabel || IMG_EXTRACTED[i]?.playwright?.getByPlaceholder || '(locator pending)'}</div>
+      `;
+      list.appendChild(item);
+    });
+  }
+
+  function addExtractedToLocators(selectedOnly){
+    let toAdd = IMG_EXTRACTED;
+    if(selectedOnly){
+      const checks = document.querySelectorAll('.img-elem-check:checked');
+      const idxs = new Set(Array.from(checks).map(c => parseInt(c.dataset.idx)));
+      toAdd = IMG_EXTRACTED.filter((_, i) => idxs.has(i));
+    }
+    if(!toAdd.length){ toast('No elements to add', 'error'); return; }
+    NS.CURRENT_LOCATORS = [...NS.CURRENT_LOCATORS, ...toAdd];
+    renderLocatorList();
+    closeImageExtractor();
+    toast(`Added ${toAdd.length} elements from image`, 'success');
+  }
+
+  function wireImageExtractor(){
+    const btnOpen = document.getElementById('btnOpenImageExtractor');
+    if(btnOpen) btnOpen.addEventListener('click', openImageExtractor);
+
+    const btnClose = document.getElementById('btnCloseImageModal');
+    if(btnClose) btnClose.addEventListener('click', closeImageExtractor);
+
+    const modal = document.getElementById('imageExtractorModal');
+    if(modal) modal.addEventListener('click', (e) => { if(e.target === modal) closeImageExtractor(); });
+
+    const browseLink = document.getElementById('imgBrowseLink');
+    const hiddenImg = document.getElementById('hiddenImageFile');
+    if(browseLink){
+      browseLink.addEventListener('click', () => {
+        const lbl = document.getElementById('labelImageFile');
+        if(lbl) lbl.click();
+      });
+    }
+    if(hiddenImg){
+      hiddenImg.addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if(!file) return;
+        const { base64, mimeType } = await fileToBase64(file);
+        setImagePreview(base64, mimeType);
+        hiddenImg.value = '';
+      });
+    }
+
+    const dropZone = document.getElementById('imgDropZone');
+    if(dropZone){
+      dropZone.addEventListener('click', () => { const lbl = document.getElementById('labelImageFile'); if(lbl) lbl.click(); });
+      ['dragenter','dragover'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('drag-over'); }));
+      ['dragleave','drop'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('drag-over'); }));
+      dropZone.addEventListener('drop', async (e) => {
+        const file = e.dataTransfer.files && e.dataTransfer.files[0];
+        if(!file || !file.type.startsWith('image/')){ toast('Drop an image file', 'error'); return; }
+        const { base64, mimeType } = await fileToBase64(file);
+        setImagePreview(base64, mimeType);
+      });
+    }
+
+    const clearBtn = document.getElementById('imgClearBtn');
+    if(clearBtn) clearBtn.addEventListener('click', clearImage);
+
+    const analyzeBtn = document.getElementById('btnAnalyzeImage');
+    if(analyzeBtn) analyzeBtn.addEventListener('click', analyzeImage);
+
+    const addAllBtn = document.getElementById('btnAddToLocators');
+    if(addAllBtn) addAllBtn.addEventListener('click', () => addExtractedToLocators(false));
+
+    const addSelBtn = document.getElementById('btnAddSelectedToLocators');
+    if(addSelBtn) addSelBtn.addEventListener('click', () => addExtractedToLocators(true));
+  }
+
+  // ========== ORIGINAL start() — extend to include image extractor wiring ==========
+
+  if(document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})(window);
+</script>
+</body>
+</html>
