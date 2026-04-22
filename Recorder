@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Adhy Automation | Phase 1+2 Complete</title>
+<style>
+  :root{
+    --bg:#0a0e13; --panel:#0f1419; --panel2:#141b24; --chip:#1a2330;
+    --txt:#e9eef5; --dim:#8ba0b8; --brd:#1e2a3a;
+    --accent:#7c5cff; --accent-dark:#5a3dd0; --ok:#10b981; --warn:#f59e0b; --bad:#ef4444;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,sans-serif}
+  
+  .app{display:grid;grid-template-columns:280px 1fr;height:100%}
+  .sidebar{background:linear-gradient(180deg,#0a0e13 0,#0a0e13 60%,#06090e 100%);border-right:1px solid var(--brd);padding:20px 16px;overflow:auto}
+  .main{display:flex;flex-direction:column;height:100%;overflow:hidden}
+  
+  .logo{display:flex;align-items:center;gap:12px;font-weight:800;font-size:18px;margin-bottom:24px}
+  .beacon{width:10px;height:10px;border-radius:50%;background:linear-gradient(180deg,var(--accent),#563bff);box-shadow:0 0 10px var(--accent)}
+  
+  .section{margin:20px 0 8px;color:var(--dim);font-size:10px;letter-spacing:1px;text-transform:uppercase}
+  .btn{width:100%;text-align:left;cursor:pointer;background:var(--panel);border:1px solid var(--brd);border-radius:10px;padding:10px 12px;color:var(--txt);font-weight:500;margin-bottom:8px;transition:all 0.2s}
+  .btn:hover{background:var(--panel2);transform:translateY(-1px)}
+  .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent-dark));border:none}
+  .btn.danger{background:linear-gradient(135deg,#ef4444,#b91c1c);border:none}
+  .btn.success{background:linear-gradient(135deg,#10b981,#059669);border:none}
+  .btn.small{padding:6px 12px;width:auto;display:inline-block;font-size:12px}
+  
+  .pill{display:inline-flex;align-items:center;gap:6px;background:var(--chip);border:1px solid var(--brd);border-radius:20px;padding:4px 10px;font-size:11px}
+  
+  .toolbar{display:flex;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--brd);background:var(--panel);flex-wrap:wrap}
+  .url-bar{flex:1;min-width:200px;padding:8px 12px;background:var(--bg);border:1px solid var(--brd);border-radius:8px;color:white;font-family:monospace;font-size:13px}
+  .mode-indicator{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:20px;background:var(--panel2)}
+  .mode-badge{padding:4px 10px;border-radius:20px;font-size:10px;font-weight:bold}
+  .mode-badge.online{background:#10b98120;color:#10b981}
+  .mode-badge.offline{background:#f59e0b20;color:#f59e0b}
+  
+  .workspace{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:14px;overflow:auto;flex:1}
+  .card{background:var(--panel);border:1px solid var(--brd);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+  .card .head{background:var(--panel2);padding:12px 14px;border-bottom:1px solid var(--brd);display:flex;align-items:center;gap:10px;font-weight:600}
+  .card .body{padding:12px;flex:1;overflow:auto}
+  
+  iframe#preview{width:100%;height:400px;background:#fff;border:none;border-radius:8px}
+  textarea.ed{background:#fbfcfe;border:1px solid #dfe6ee;border-radius:12px;color:#0f172a;padding:10px;font-family:monospace;font-size:12px;width:100%}
+  
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--brd);padding:0 12px}
+  .tab{padding:8px 16px;cursor:pointer;border-radius:8px 8px 0 0;color:var(--dim);font-size:12px}
+  .tab.active{background:var(--accent);color:white}
+  .tab-content{display:none;padding:12px;overflow:auto;max-height:350px}
+  .tab-content.active{display:block}
+  
+  .step-row,.api-entry,.log-entry,.assertion-row{background:var(--panel2);border:1px solid var(--brd);border-radius:8px;padding:8px;margin-bottom:6px;font-size:12px}
+  .step-passed{border-left:3px solid #10b981}
+  .step-failed{border-left:3px solid #ef4444}
+  .step-running{border-left:3px solid #f59e0b}
+  
+  .api-method{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:bold;margin-right:8px}
+  .method-GET{background:#3b82f6}
+  .method-POST{background:#10b981}
+  .method-PUT{background:#f59e0b}
+  .method-DELETE{background:#ef4444}
+  
+  .timeline{position:relative;padding-left:20px}
+  .timeline-node{position:relative;padding-bottom:16px}
+  .timeline-node::before{content:'';position:absolute;left:-12px;top:8px;width:10px;height:10px;border-radius:50%;background:var(--accent)}
+  .timeline-node::after{content:'';position:absolute;left:-7px;top:18px;width:2px;height:calc(100% - 10px);background:var(--brd)}
+  .timeline-node:last-child::after{display:none}
+  
+  .footer{display:flex;gap:10px;align-items:center;padding:12px 16px;border-top:1px solid var(--brd);background:var(--panel)}
+  .toast{position:fixed;bottom:16px;right:16px;background:#1a2330;border:1px solid #2a3648;padding:10px 16px;border-radius:10px;opacity:0;transition:0.2s;z-index:9999;font-size:13px}
+  .toast.show{opacity:1}
+  .hidden{display:none}
+  .recording-indicator{width:10px;height:10px;border-radius:50%;background:#ef4444;animation:pulse 1s infinite;display:inline-block;margin-right:6px}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+  .status-badge{font-size:10px;padding:2px 8px;border-radius:12px;margin-left:8px}
+  .status-pass{background:#10b98120;color:#10b981}
+  .status-fail{background:#ef444420;color:#ef4444}
+  .progress-bar{height:4px;background:var(--brd);border-radius:2px;overflow:hidden}
+  .progress-fill{height:100%;background:var(--accent);transition:width 0.3s}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="logo"><span class="beacon"></span> Adhy Automation</div>
+    
+    <div class="section">Mode</div>
+    <button class="btn" id="btnOfflineMode">📄 Offline (Paste HTML)</button>
+    <button class="btn" id="btnOnlineMode">🌐 Online (Live + API)</button>
+    
+    <div class="section">Recording</div>
+    <button class="btn" id="btnStartRecord" style="background:#ef4444">● Start Recording</button>
+    <button class="btn" id="btnStopRecord">⏹ Stop Recording</button>
+    
+    <div class="section">Execution</div>
+    <button class="btn primary" id="btnRunTests">▶ Run Test Suite</button>
+    <button class="btn" id="btnStopExecution">⏸ Stop Execution</button>
+    
+    <div class="section">Assertions</div>
+    <button class="btn" id="btnAddAssertion">➕ Add Assertion</button>
+    
+    <div class="section">Export</div>
+    <button class="btn" id="btnExportSelenium">🐍 Export Selenium (Python)</button>
+    <button class="btn" id="btnExportPlaywright">🎭 Export Playwright (JS)</button>
+    <button class="btn" id="btnExportAll">📦 Export Session (JSON)</button>
+    <button class="btn danger" id="btnClear">🗑 Clear All</button>
+  </aside>
+
+  <main class="main">
+    <div class="toolbar">
+      <div class="title" style="font-weight:700">Adhy Studio</div>
+      <input type="text" id="urlInput" class="url-bar" placeholder="https://example.com" value="https://httpbin.org/anything"/>
+      <button id="navigateBtn" class="btn small">🌐 Go</button>
+      <div class="mode-indicator" id="modeIndicator">
+        <span id="modeIcon">📄</span>
+        <span id="modeText">Offline</span>
+        <span id="modeBadge" class="mode-badge offline">PASTE MODE</span>
+      </div>
+    </div>
+
+    <div class="workspace">
+      <section class="card">
+        <div class="head">Browser Preview</div>
+        <div class="body">
+          <iframe id="preview" src="about:blank"></iframe>
+          <div id="pasteArea">
+            <textarea id="pasteBox" class="ed" placeholder="Paste HTML here..." rows="4"></textarea>
+            <button id="renderHtmlBtn" class="btn primary small">Render HTML</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="head">
+          <div class="tabs">
+            <div class="tab active" data-tab="steps">📝 Steps (<span id="stepCount">0</span>)</div>
+            <div class="tab" data-tab="api">📡 API (<span id="apiCount">0</span>)</div>
+            <div class="tab" data-tab="assertions">✅ Assertions (<span id="assertCount">0</span>)</div>
+            <div class="tab" data-tab="timeline">⏱ Timeline</div>
+            <div class="tab" data-tab="logs">📋 Logs (<span id="logCount">0</span>)</div>
+          </div>
+        </div>
+        <div class="body">
+          <div id="tab-steps" class="tab-content active" style="max-height:380px;overflow:auto">
+            <div id="stepList"></div>
+          </div>
+          <div id="tab-api" class="tab-content" style="max-height:380px;overflow:auto">
+            <div id="apiList"></div>
+          </div>
+          <div id="tab-assertions" class="tab-content" style="max-height:380px;overflow:auto">
+            <div id="assertionList"></div>
+            <div id="assertionResult" class="small" style="margin-top:10px"></div>
+          </div>
+          <div id="tab-timeline" class="tab-content" style="max-height:380px;overflow:auto">
+            <div id="timelineView" class="timeline"></div>
+          </div>
+          <div id="tab-logs" class="tab-content" style="max-height:380px;overflow:auto">
+            <div id="logList"></div>
+          </div>
+          <div id="executionProgress" class="progress-bar" style="margin-top:10px;display:none">
+            <div id="executionFill" class="progress-fill" style="width:0%"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="footer">
+      <div class="pill">🔴 Recording captures clicks, typing & API calls</div>
+      <div class="pill">⚡ Execution includes retry & wait strategies</div>
+      <div class="pill">✅ Assertions validate UI & API responses</div>
+    </div>
+  </main>
+</div>
+<div id="toast" class="toast">Ready</div>
+
+<script>
+// ==================== ADHY PHASE 1+2 COMPLETE ====================
+
+const Adhy = {
+  currentMode: 'offline',
+  isRecording: false,
+  isExecuting: false,
+  sessionStart: null,
+  steps: [],
+  apiCalls: [],
+  assertions: [],
+  logs: [],
+  executionResults: [],
+  
+  // Smart locator strategies with fallback
+  locatorStrategies: [
+    { name: 'id', get: (el) => el.id ? `#${el.id}` : null, score: 100 },
+    { name: 'data-testid', get: (el) => el.getAttribute('data-testid') ? `[data-testid="${el.getAttribute('data-testid')}"]` : null, score: 95 },
+    { name: 'name', get: (el) => el.name ? `[name="${el.name}"]` : null, score: 80 },
+    { name: 'aria-label', get: (el) => el.getAttribute('aria-label') ? `[aria-label="${el.getAttribute('aria-label')}"]` : null, score: 85 },
+    { name: 'class', get: (el) => el.className && typeof el.className === 'string' ? `.${el.className.split(' ')[0]}` : null, score: 60 },
+    { name: 'xpath-text', get: (el) => el.innerText ? `//*[text()="${el.innerText.substring(0,50)}"]` : null, score: 70 },
+    { name: 'xpath-tag', get: (el) => `//${el.tagName.toLowerCase()}`, score: 30 }
+  ],
+  
+  // Wait strategies
+  waitStrategies: {
+    explicit: async (fn, timeout = 5000, interval = 100) => {
+      const start = Date.now();
+      while (Date.now() - start < timeout) {
+        try { return await fn(); } catch(e) { await new Promise(r => setTimeout(r, interval)); }
+      }
+      throw new Error(`Timeout after ${timeout}ms`);
+    },
+    networkIdle: async (iframe, timeout = 10000) => {
+      const start = Date.now();
+      while (Date.now() - start < timeout) {
+        let pending = 0;
+        try {
+          const perf = iframe.contentWindow?.performance;
+          if (perf) {
+            const entries = perf.getEntriesByType('resource');
+            pending = entries.filter(e => !e.responseEnd).length;
+          }
+        } catch(e) {}
+        if (pending === 0) return true;
+        await new Promise(r => setTimeout(r, 200));
+      }
+      return false;
+    }
+  },
+  
+  // Retry logic with exponential backoff
+  async retry(fn, maxAttempts = 3, baseDelay = 500) {
+    let lastError;
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+        if (i < maxAttempts - 1) {
+          const delay = baseDelay * Math.pow(2, i);
+          this.addLog('warn', `Retry ${i+1}/${maxAttempts} after ${delay}ms: ${error.message}`);
+          await new Promise(r => setTimeout(r, delay));
+        }
+      }
+    }
+    throw lastError;
+  },
+  
+  init() {
+    this.bindEvents();
+    this.setupTabs();
+    this.setupMessageListener();
+    toast('Adhy Ready - Phase 1+2 Complete: Execution, Assertions, Retry, Wait');
+  },
+  
+  bindEvents() {
+    document.getElementById('btnOfflineMode')?.addEventListener('click', () => this.setMode('offline'));
+    document.getElementById('btnOnlineMode')?.addEventListener('click', () => this.setMode('online'));
+    document.getElementById('btnStartRecord')?.addEventListener('click', () => this.startRecording());
+    document.getElementById('btnStopRecord')?.addEventListener('click', () => this.stopRecording());
+    document.getElementById('navigateBtn')?.addEventListener('click', () => this.navigate());
+    document.getElementById('btnRunTests')?.addEventListener('click', () => this.runTestSuite());
+    document.getElementById('btnStopExecution')?.addEventListener('click', () => this.stopExecution());
+    document.getElementById('btnAddAssertion')?.addEventListener('click', () => this.addAssertionDialog());
+    document.getElementById('btnExportSelenium')?.addEventListener('click', () => this.exportSelenium());
+    document.getElementById('btnExportPlaywright')?.addEventListener('click', () => this.exportPlaywright());
+    document.getElementById('btnExportAll')?.addEventListener('click', () => this.exportAll());
+    document.getElementById('btnClear')?.addEventListener('click', () => this.clearAll());
+    document.getElementById('renderHtmlBtn')?.addEventListener('click', () => this.renderPastedHtml());
+  },
+  
+  setupTabs() {
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const tabId = tab.dataset.tab;
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(`tab-${tabId}`)?.classList.add('active');
+        if (tabId === 'timeline') this.renderTimeline();
+      });
+    });
+  },
+  
+  setupMessageListener() {
+    window.addEventListener('message', (event) => {
+      if (!this.isRecording) return;
+      if (event.data?.type === 'apiCall') this.addApiCall(event.data.data);
+      if (event.data?.type === 'userAction') this.addStep(event.data.data);
+    });
+  },
+  
+  setMode(mode) {
+    this.currentMode = mode;
+    const pasteArea = document.getElementById('pasteArea');
+    const iframe = document.getElementById('preview');
+    const urlInput = document.getElementById('urlInput');
+    const modeIcon = document.getElementById('modeIcon');
+    const modeText = document.getElementById('modeText');
+    const modeBadge = document.getElementById('modeBadge');
+    
+    if (mode === 'offline') {
+      pasteArea.classList.remove('hidden');
+      iframe.classList.add('hidden');
+      urlInput.disabled = true;
+      modeIcon.textContent = '📄';
+      modeText.textContent = 'Offline';
+      modeBadge.textContent = 'PASTE MODE';
+      modeBadge.className = 'mode-badge offline';
+      toast('📄 Offline mode - paste HTML to extract');
+    } else {
+      pasteArea.classList.add('hidden');
+      iframe.classList.remove('hidden');
+      urlInput.disabled = false;
+      modeIcon.textContent = '🌐';
+      modeText.textContent = 'Online';
+      modeBadge.textContent = 'LIVE + API';
+      modeBadge.className = 'mode-badge online';
+      toast('🌐 Online mode - API capture & execution ready');
+    }
+  },
+  
+  async navigate() {
+    if (this.currentMode !== 'online') return toast('Switch to online mode first');
+    const url = document.getElementById('urlInput')?.value;
+    if (!url) return toast('Enter a URL');
+    
+    const iframe = document.getElementById('preview');
+    iframe.src = url;
+    toast(`Navigating to ${url}`);
+    
+    iframe.onload = async () => {
+      await this.waitStrategies.networkIdle(iframe, 5000);
+      this.injectCaptureScripts();
+      toast('✓ Page loaded - API capture active');
+    };
+  },
+  
+  injectCaptureScripts() {
+    const iframe = document.getElementById('preview');
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc) throw new Error();
+      
+      const script = doc.createElement('script');
+      script.textContent = `
+        (function() {
+          const originalFetch = window.fetch;
+          window.fetch = function(...args) {
+            const url = args[0];
+            const options = args[1] || {};
+            const startTime = Date.now();
+            return originalFetch.apply(this, args).then(async (response) => {
+              const clone = response.clone();
+              let responseBody = null;
+              try { responseBody = await clone.text(); } catch(e) { responseBody = '[Unable to read]'; }
+              window.parent.postMessage({
+                type: 'apiCall',
+                data: {
+                  id: Date.now(),
+                  method: options.method || 'GET',
+                  url: url,
+                  requestBody: options.body || null,
+                  responseStatus: response.status,
+                  responseBody: responseBody ? responseBody.substring(0, 2000) : null,
+                  duration: Date.now() - startTime,
+                  timestamp: new Date().toISOString()
+                }
+              }, '*');
+              return response;
+            }).catch((error) => {
+              window.parent.postMessage({
+                type: 'apiCall',
+                data: {
+                  id: Date.now(),
+                  method: options.method || 'GET',
+                  url: url,
+                  error: error.message,
+                  timestamp: new Date().toISOString()
+                }
+              }, '*');
+              throw error;
+            });
+          };
+          
+          document.addEventListener('click', function(e) {
+            if (window.parent._recordingActive) {
+              const el = e.target;
+              let selector = el.id ? '#' + el.id : el.tagName.toLowerCase();
+              if (el.className && typeof el.className === 'string') {
+                const cls = el.className.split(' ')[0];
+                if (cls) selector += '.' + cls;
+              }
+              window.parent.postMessage({
+                type: 'userAction',
+                data: {
+                  id: Date.now(),
+                  action: 'click',
+                  selector: selector,
+                  value: el.innerText?.slice(0, 100) || '',
+                  timestamp: new Date().toISOString()
+                }
+              }, '*');
+            }
+          });
+          
+          document.addEventListener('input', function(e) {
+            if (window.parent._recordingActive && e.target.tagName === 'INPUT') {
+              window.parent.postMessage({
+                type: 'userAction',
+                data: {
+                  id: Date.now(),
+                  action: 'type',
+                  selector: e.target.id ? '#' + e.target.id : e.target.name ? '[name="' + e.target.name + '"]' : e.target.tagName.toLowerCase(),
+                  value: e.target.value,
+                  timestamp: new Date().toISOString()
+                }
+              }, '*');
+            }
+          });
+        })();
+      `;
+      doc.head.appendChild(script);
+    } catch(e) {
+      toast('⚠️ Cross-origin - limited capture');
+    }
+  },
+  
+  startRecording() {
+    if (this.currentMode !== 'online') return toast('Recording only in online mode', 'error');
+    this.isRecording = true;
+    const iframe = document.getElementById('preview');
+    if (iframe?.contentWindow) iframe.contentWindow._recordingActive = true;
+    toast('🔴 RECORDING - Capturing actions & API calls');
+    this.addLog('info', 'Recording started');
+  },
+  
+  stopRecording() {
+    this.isRecording = false;
+    const iframe = document.getElementById('preview');
+    if (iframe?.contentWindow) iframe.contentWindow._recordingActive = false;
+    toast(`⏹ Stopped - ${this.steps.length} steps, ${this.apiCalls.length} API calls`);
+    this.addLog('info', `Recording stopped`);
+  },
+  
+  addStep(step) {
+    this.steps.push({
+      id: step.id || Date.now(),
+      action: step.action,
+      selector: step.selector,
+      value: step.value || "",
+      timestamp: step.timestamp || new Date().toISOString()
+    });
+    this.renderSteps();
+    document.getElementById('stepCount').innerText = this.steps.length;
+    this.renderTimeline();
+  },
+  
+  addApiCall(api) {
+    this.apiCalls.push({
+      id: api.id || Date.now(),
+      method: api.method,
+      url: api.url,
+      requestBody: api.requestBody,
+      responseStatus: api.responseStatus,
+      responseBody: api.responseBody,
+      duration: api.duration,
+      timestamp: api.timestamp || new Date().toISOString()
+    });
+    this.renderAPI();
+    document.getElementById('apiCount').innerText = this.apiCalls.length;
+  },
+  
+  addAssertion(assertion) {
+    this.assertions.push({
+      id: Date.now(),
+      ...assertion,
+      timestamp: new Date().toISOString()
+    });
+    this.renderAssertions();
+    document.getElementById('assertCount').innerText = this.assertions.length;
+    this.addLog('info', `Assertion added: ${assertion.type} on ${assertion.target}`);
+  },
+  
+  addAssertionDialog() {
+    const type = prompt('Assertion type: (visible / text / api-status / api-body)', 'visible');
+    if (!type) return;
+    const target = prompt('Target (selector for UI, URL for API)', '');
+    if (!target) return;
+    let expected = null;
+    if (type === 'text' || type === 'api-body') {
+      expected = prompt('Expected value', '');
+    }
+    this.addAssertion({ type, target, expected });
+  },
+  
+  addLog(level, message) {
+    this.logs.push({ level, message, timestamp: new Date().toISOString() });
+    this.renderLogs();
+    document.getElementById('logCount').innerText = this.logs.length;
+  },
+  
+  // ========== EXECUTION ENGINE with Retry & Wait ==========
+  
+  async runTestSuite() {
+    if (this.isExecuting) return toast('Execution already running');
+    if (this.steps.length === 0 && this.assertions.length === 0) return toast('No steps or assertions to run');
+    if (this.currentMode !== 'online') return toast('Switch to online mode to execute');
+    
+    this.isExecuting = true;
+    this.executionResults = [];
+    const progressBar = document.getElementById('executionProgress');
+    const progressFill = document.getElementById('executionFill');
+    progressBar.style.display = 'block';
+    
+    const totalItems = this.steps.length + this.assertions.length;
+    let completed = 0;
+    
+    const updateProgress = () => {
+      completed++;
+      const percent = (completed / totalItems) * 100;
+      progressFill.style.width = `${percent}%`;
+    };
+    
+    try {
+      // Run steps first
+      for (let i = 0; i < this.steps.length; i++) {
+        if (!this.isExecuting) break;
+        const step = this.steps[i];
+        this.addLog('info', `Executing step ${i+1}: ${step.action} on ${step.selector}`);
+        this.updateStepStatus(step.id, 'running');
+        
+        const result = await this.executeStepWithRetry(step);
+        this.executionResults.push({ type: 'step', step, result });
+        this.updateStepStatus(step.id, result.success ? 'passed' : 'failed');
+        
+        if (result.success) {
+          this.addLog('info', `✓ Step ${i+1} passed`);
+        } else {
+          this.addLog('error', `✗ Step ${i+1} failed: ${result.error}`);
+          if (!result.retryable) break;
+        }
+        updateProgress();
+      }
+      
+      // Run assertions
+      for (let i = 0; i < this.assertions.length; i++) {
+        if (!this.isExecuting) break;
+        const assertion = this.assertions[i];
+        this.addLog('info', `Running assertion ${i+1}: ${assertion.type}`);
+        
+        const result = await this.executeAssertion(assertion);
+        this.executionResults.push({ type: 'assertion', assertion, result });
+        this.updateAssertionStatus(assertion.id, result.success);
+        
+        this.addLog(result.success ? 'info' : 'error', `Assertion ${i+1}: ${result.success ? 'PASSED' : 'FAILED - ' + result.message}`);
+        updateProgress();
+      }
+      
+      const passed = this.executionResults.filter(r => r.result.success).length;
+      const failed = this.executionResults.filter(r => !r.result.success).length;
+      toast(`Execution complete: ${passed} passed, ${failed} failed`);
+      this.addLog('info', `Execution complete: ${passed}/${totalItems} passed`);
+      
+    } catch (error) {
+      this.addLog('error', `Execution aborted: ${error.message}`);
+      toast(`Execution failed: ${error.message}`, 'error');
+    } finally {
+      this.isExecuting = false;
+      setTimeout(() => { progressBar.style.display = 'none'; }, 2000);
+      this.renderTimeline();
+    }
+  },
+  
+  async executeStepWithRetry(step) {
+    return this.retry(async () => {
+      const iframe = document.getElementById('preview');
+      const doc = iframe.contentDocument;
+      if (!doc) throw new Error('No page loaded');
+      
+      // Wait for element with explicit wait
+      const element = await this.waitStrategies.explicit(async () => {
+        const el = doc.querySelector(step.selector);
+        if (!el) throw new Error(`Element not found: ${step.selector}`);
+        return el;
+      }, 10000);
+      
+      if (step.action === 'click') {
+        element.click();
+        return { success: true, retryable: true };
+      } else if (step.action === 'type') {
+        element.value = step.value;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        return { success: true, retryable: true };
+      }
+      return { success: true, retryable: true };
+    }, 3, 500).then(() => ({ success: true })).catch((error) => ({ success: false, error: error.message, retryable: true }));
+  },
+  
+  async executeAssertion(assertion) {
+    const iframe = document.getElementById('preview');
+    
+    try {
+      switch (assertion.type) {
+        case 'visible': {
+          const doc = iframe.contentDocument;
+          const el = await this.waitStrategies.explicit(() => {
+            const element = doc.querySelector(assertion.target);
+            if (!element) throw new Error('Element not found');
+            return element;
+          }, 5000);
+          const isVisible = el.offsetParent !== null;
+          return { success: isVisible, message: isVisible ? 'Element visible' : 'Element not visible' };
+        }
+        
+        case 'text': {
+          const doc = iframe.contentDocument;
+          const el = await this.waitStrategies.explicit(() => {
+            const element = doc.querySelector(assertion.target);
+            if (!element) throw new Error('Element not found');
+            return element;
+          }, 5000);
+          const actualText = el.innerText || el.textContent;
+          const matches = actualText.includes(assertion.expected);
+          return { success: matches, message: `Expected "${assertion.expected}" in "${actualText}"` };
+        }
+        
+        case 'api-status': {
+          const apiCall = this.apiCalls.find(a => a.url.includes(assertion.target));
+          if (!apiCall) return { success: false, message: `No API call found for ${assertion.target}` };
+          const matches = apiCall.responseStatus === parseInt(assertion.expected);
+          return { success: matches, message: `Expected status ${assertion.expected}, got ${apiCall.responseStatus}` };
+        }
+        
+        case 'api-body': {
+          const apiCall = this.apiCalls.find(a => a.url.includes(assertion.target));
+          if (!apiCall) return { success: false, message: `No API call found for ${assertion.target}` };
+          const body = JSON.stringify(apiCall.responseBody || '');
+          const matches = body.includes(assertion.expected);
+          return { success: matches, message: matches ? 'Body contains expected text' : 'Body does not contain expected text' };
+        }
+        
+        default:
+          return { success: false, message: `Unknown assertion type: ${assertion.type}` };
+      }
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  },
+  
+  stopExecution() {
+    this.isExecuting = false;
+    toast('Execution stopped by user');
+    this.addLog('warn', 'Execution stopped by user');
+  },
+  
+  updateStepStatus(stepId, status) {
+    const stepElement = document.querySelector(`.step-row[data-id="${stepId}"]`);
+    if (stepElement) {
+      stepElement.classList.remove('step-running', 'step-passed', 'step-failed');
+      stepElement.classList.add(`step-${status}`);
+    }
+  },
+  
+  updateAssertionStatus(assertionId, passed) {
+    const assertionElement = document.querySelector(`.assertion-row[data-id="${assertionId}"]`);
+    if (assertionElement) {
+      assertionElement.classList.remove('step-passed', 'step-failed');
+      assertionElement.classList.add(passed ? 'step-passed' : 'step-failed');
+    }
+  },
+  
+  // ========== RENDER METHODS ==========
+  
+  renderSteps() {
+    const container = document.getElementById('stepList');
+    if (!container) return;
+    if (this.steps.length === 0) {
+      container.innerHTML = '<div class="small" style="padding:20px;text-align:center">No steps yet. Start recording.</div>';
+      return;
+    }
+    container.innerHTML = this.steps.map(step => `
+      <div class="step-row" data-id="${step.id}">
+        <b>${step.action}</b>
+        <code>${step.selector}</code>
+        ${step.value ? `<span> → "${step.value.substring(0, 50)}"</span>` : ''}
+        <div class="small">${new Date(step.timestamp).toLocaleTimeString()}</div>
+      </div>
+    `).join('');
+  },
+  
+  renderAPI() {
+    const container = document.getElementById('apiList');
+    if (!container) return;
+    if (this.apiCalls.length === 0) {
+      container.innerHTML = '<div class="small" style="padding:20px;text-align:center">No API calls captured.</div>';
+      return;
+    }
+    container.innerHTML = this.apiCalls.slice().reverse().map(api => `
+      <div class="api-entry">
+        <div><span class="api-method method-${api.method}">${api.method}</span><code style="font-size:11px">${api.url}</code></div>
+        <div class="small">${api.responseStatus ? `<span style="color:${api.responseStatus >= 400 ? '#ef4444' : '#10b981'}">Status: ${api.responseStatus}</span>` : ''}${api.duration ? ` | ${api.duration}ms` : ''}</div>
+        ${api.requestBody ? `<details><summary>📤 Request</summary><pre style="font-size:10px;background:#000;padding:6px;border-radius:4px;margin-top:4px;overflow:auto">${this.truncate(api.requestBody, 300)}</pre></details>` : ''}
+        ${api.responseBody ? `<details><summary>📥 Response</summary><pre style="font-size:10px;background:#000;padding:6px;border-radius:4px;margin-top:4px;overflow:auto">${this.truncate(api.responseBody, 300)}</pre></details>` : ''}
+        <div class="small">${new Date(api.timestamp).toLocaleTimeString()}</div>
+      </div>
+    `).join('');
+  },
+  
+  renderAssertions() {
+    const container = document.getElementById('assertionList');
+    if (!container) return;
+    if (this.assertions.length === 0) {
+      container.innerHTML = '<div class="small" style="padding:20px;text-align:center">No assertions. Click "Add Assertion"</div>';
+      return;
+    }
+    container.innerHTML = this.assertions.map(a => `
+      <div class="assertion-row step-row" data-id="${a.id}">
+        <b>${a.type}</b> on <code>${a.target}</code>
+        ${a.expected ? `<span> → "${a.expected}"</span>` : ''}
+        <div class="small">${new Date(a.timestamp).toLocaleTimeString()}</div>
+      </div>
+    `).join('');
+  },
+  
+  renderTimeline() {
+    const container = document.getElementById('timelineView');
+    if (!container) return;
+    const allEvents = [
+      ...this.steps.map(s => ({ ...s, eventType: 'step' })),
+      ...this.apiCalls.map(a => ({ ...a, eventType: 'api' })),
+      ...this.assertions.map(a => ({ ...a, eventType: 'assertion' }))
+    ].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+    
+    if (allEvents.length === 0) {
+      container.innerHTML = '<div class="small" style="padding:20px;text-align:center">No events yet</div>';
+      return;
+    }
+    
+    container.innerHTML = allEvents.map(event => `
+      <div class="timeline-node">
+        <div><b>${event.eventType.toUpperCase()}</b> ${event.action || event.type || event.method || ''}</div>
+        <div class="small">${event.selector || event.url || event.target || ''}</div>
+        <div class="small" style="color:var(--dim)">${new Date(event.timestamp).toLocaleTimeString()}</div>
+      </div>
+    `).join('');
+  },
+  
+  renderLogs() {
+    const container = document.getElementById('logList');
+    if (!container) return;
+    if (this.logs.length === 0) {
+      container.innerHTML = '<div class="small" style="padding:20px;text-align:center">No logs yet.</div>';
+      return;
+    }
+    container.innerHTML = this.logs.slice().reverse().map(log => `
+      <div class="log-entry log-${log.level}">
+        <span style="font-weight:bold">[${log.level.toUpperCase()}]</span> ${log.message}
+        <div class="small">${new Date(log.timestamp).toLocaleTimeString()}</div>
+      </div>
+    `).join('');
+  },
+  
+  // ========== EXPORT METHODS ==========
+  
+  exportSelenium() {
+    const code = `# Selenium Python Test
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import time
+
+driver = webdriver.Chrome()
+driver.maximize_window()
+
+try:
+${this.steps.map(step => {
+  if (step.action === 'navigate') return `    driver.get("${step.value}")`;
+  if (step.action === 'click') return `    WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "${step.selector}"))).click()`;
+  if (step.action === 'type') return `    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "${step.selector}"))).send_keys("${step.value}")`;
+  return `    # ${step.action} on ${step.selector}`;
+}).join('\n')}
+    
+finally:
+    time.sleep(2)
+    driver.quit()`;
+    
+    this.downloadFile('adhy_selenium_test.py', code);
+    toast('Selenium code exported');
+  },
+  
+  exportPlaywright() {
+    const code = `// Playwright JavaScript Test
+const { chromium } = require('playwright');
+
+(async () => {
+  const browser = await chromium.launch({ headless: false });
+  const page = await browser.newPage();
+  
+  try {
+${this.steps.map(step => {
+  if (step.action === 'navigate') return `    await page.goto("${step.value}");`;
+  if (step.action === 'click') return `    await page.click("${step.selector}");`;
+  if (step.action === 'type') return `    await page.fill("${step.selector}", "${step.value}");`;
+  return `    // ${step.action} on ${step.selector}`;
+}).join('\n')}
+    
+    await page.waitForTimeout(2000);
+  } catch (error) {
+    console.error('Test failed:', error);
+  } finally {
+    await browser.close();
+  }
+})();`;
+    
+    this.downloadFile('adhy_playwright_test.js', code);
+    toast('Playwright code exported');
+  },
+  
+  exportAll() {
+    const data = JSON.stringify({
+      version: "2.0",
+      exportedAt: new Date().toISOString(),
+      session: { mode: this.currentMode, stepCount: this.steps.length, apiCount: this.apiCalls.length, assertionCount: this.assertions.length },
+      steps: this.steps,
+      apiCalls: this.apiCalls.map(a => ({ ...a, requestBody: this.tryParseJSON(a.requestBody), responseBody: this.tryParseJSON(a.responseBody) })),
+      assertions: this.assertions,
+      logs: this.logs,
+      executionResults: this.executionResults
+    }, null, 2);
+    this.downloadFile(`adhy-session-${Date.now()}.json`, data);
+    toast('Complete session exported');
+  },
+  
+  tryParseJSON(str) { if (!str) return null; try { return JSON.parse(str); } catch(e) { return str; } },
+  truncate(str, maxLen) { if (!str) return ''; const s = String(str); return s.length <= maxLen ? s : s.substring(0, maxLen) + '...[truncated]'; },
+  
+  downloadFile(name, content) {
+    const blob = new Blob([content], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  },
+  
+  renderPastedHtml() {
+    const html = document.getElementById('pasteBox')?.value;
+    if (!html) return toast('Paste HTML first');
+    const iframe = document.getElementById('preview');
+    iframe.classList.remove('hidden');
+    iframe.srcdoc = html;
+    toast('HTML rendered');
+  },
+  
+  clearAll() {
+    this.steps = [];
+    this.apiCalls = [];
+    this.assertions = [];
+    this.logs = [];
+    this.executionResults = [];
+    this.sessionStart = null;
+    this.renderSteps();
+    this.renderAPI();
+    this.renderAssertions();
+    this.renderLogs();
+    this.renderTimeline();
+    document.getElementById('stepCount').innerText = '0';
+    document.getElementById('apiCount').innerText = '0';
+    document.getElementById('assertCount').innerText = '0';
+    document.getElementById('logCount').innerText = '0';
+    toast('All data cleared');
+  }
+};
+
+function toast(msg, type = 'info') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = type === 'error' ? '#b91c1c' : '#1a2330';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+document.addEventListener('DOMContentLoaded', () => Adhy.init());
+window.Adhy = Adhy;
+</script>
+</body>
+</html>
