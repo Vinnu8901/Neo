@@ -1,510 +1,968 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Adhy Studio – Layer 1 Visual Editor</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <style>
-    /* (same CSS as your wireframe – I’ve included it exactly to preserve the look) */
-    :root{ --bg:#0f1116; --panel:#171a22; --panel-2:#1d2130; --line:#2c3347; --soft:#8f9bb7; --text:#edf2ff; --accent:#7c9cff; --accent-2:#7ef0c9; --danger:#ff7d8a; --warning:#ffd36b; --shadow: 0 20px 60px rgba(0,0,0,.35); --radius: 18px; --radius-sm: 12px; }
-    *{box-sizing:border-box}
-    html{scroll-behavior:smooth}
-    body{ margin:0; font-family:'IBM Plex Sans', sans-serif; background: radial-gradient(circle at top left, rgba(124,156,255,.13), transparent 30%), radial-gradient(circle at bottom right, rgba(126,240,201,.08), transparent 28%), linear-gradient(180deg, #0c0e13 0%, #11141b 100%); color:var(--text); min-height:100vh; }
-    body::before{ content:""; position:fixed; inset:0; background-image: linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px); background-size: 28px 28px; mask-image: linear-gradient(to bottom, rgba(0,0,0,.6), transparent 85%); pointer-events:none; }
-    .app{ display:grid; grid-template-columns: 280px 1fr 360px; min-height:100vh; gap:1px; background:rgba(255,255,255,.06); position:relative; z-index:1; }
-    .sidebar, .main, .inspector{ background:rgba(14,17,24,.88); backdrop-filter: blur(16px); }
-    .sidebar{ padding:24px 18px; display:flex; flex-direction:column; gap:24px; overflow-y:auto; }
-    .brand{ display:flex; align-items:center; gap:14px; padding:6px 8px; }
-    .brand-mark{ width:42px; height:42px; border-radius:14px; background:linear-gradient(135deg, var(--accent), var(--accent-2)); position:relative; box-shadow:0 10px 24px rgba(124,156,255,.28); }
-    .brand-mark::before, .brand-mark::after{ content:""; position:absolute; background:#0d1118; border-radius:999px; }
-    .brand-mark::before{ width:22px;height:6px;left:10px;top:11px; }
-    .brand-mark::after{ width:14px;height:6px;left:10px;bottom:11px; }
-    .brand h1{ margin:0; font-family:'Space Grotesk', sans-serif; font-size:1.05rem; letter-spacing:.03em; }
-    .brand p{ margin:2px 0 0; color:var(--soft); font-size:.82rem; }
-    .nav-group{ display:flex; flex-direction:column; gap:8px; }
-    .nav-title{ color:#6f7a96; font-size:.72rem; text-transform:uppercase; letter-spacing:.14em; padding:0 12px 8px; }
-    .nav-btn{ border:1px solid transparent; background:transparent; color:var(--text); border-radius:14px; padding:13px 14px; text-align:left; display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer; transition:.22s ease; font:inherit; }
-    .nav-btn .left{ display:flex; align-items:center; gap:12px; }
-    .icon{ width:18px; height:18px; border:1.5px solid currentColor; border-radius:5px; opacity:.9; flex:0 0 auto; }
-    .nav-btn:hover{ background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.08); transform:translateX(3px); }
-    .nav-btn.active{ background:linear-gradient(180deg, rgba(124,156,255,.18), rgba(124,156,255,.08)); border-color:rgba(124,156,255,.32); box-shadow: inset 0 1px 0 rgba(255,255,255,.05); }
-    .projects{ margin-top:auto; background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)); border:1px solid rgba(255,255,255,.08); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow); }
-    .projects h3{ margin:0 0 6px; font-family:'Space Grotesk', sans-serif; font-size:1rem; }
-    .projects p{ margin:0 0 14px; color:var(--soft); font-size:.9rem; line-height:1.45; }
-    .ghost-btn, .primary-btn{ border:none; border-radius:14px; padding:12px 14px; font:inherit; font-weight:600; cursor:pointer; transition:.22s ease; }
-    .primary-btn{ width:100%; background:linear-gradient(135deg, var(--accent), #96adff); color:#0d1220; box-shadow:0 12px 24px rgba(124,156,255,.24); }
-    .primary-btn:hover{ transform:translateY(-2px) scale(1.01); box-shadow:0 16px 28px rgba(124,156,255,.34); }
-    .primary-btn:active, .ghost-btn:active{ transform:scale(.98); }
-    .main{ padding:26px; display:flex; flex-direction:column; gap:20px; overflow-y:auto; }
-    .topbar{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-    .page-title h2{ margin:0; font-family:'Space Grotesk', sans-serif; font-size:clamp(1.4rem, 2vw, 2rem); letter-spacing:-.03em; }
-    .page-title p{ margin:6px 0 0; color:var(--soft); max-width:58ch; }
-    .toolbar{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    .tool-btn{ border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.04); color:var(--text); border-radius:14px; padding:11px 14px; display:inline-flex; align-items:center; gap:10px; cursor:pointer; transition:.22s ease; font:inherit; font-weight:500; }
-    .tool-btn:hover{ background:rgba(255,255,255,.08); transform:translateY(-2px); }
-    .tool-btn.record{ background:linear-gradient(135deg, rgba(255,125,138,.18), rgba(255,125,138,.08)); border-color:rgba(255,125,138,.28); }
-    .tool-btn.recording{ background:linear-gradient(135deg, rgba(126,240,201,.25), rgba(126,240,201,.12)); border-color:rgba(126,240,201,.35); }
-    .tool-btn.run{ background:linear-gradient(135deg, rgba(126,240,201,.18), rgba(126,240,201,.08)); border-color:rgba(126,240,201,.25); }
-    .tool-btn.stop{ background:linear-gradient(135deg, rgba(255,125,138,.15), rgba(255,125,138,.06)); border-color:rgba(255,125,138,.22); }
-    .dot{ width:10px;height:10px;border-radius:50%; background:currentColor; box-shadow:0 0 0 6px rgba(255,255,255,.04); }
-    .workspace{ display:grid; grid-template-columns: 1.05fr .95fr; gap:20px; min-height:0; flex:1; }
-    .panel{ border:1px solid rgba(255,255,255,.08); background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)); border-radius:24px; box-shadow:var(--shadow); overflow:hidden; display:flex; flex-direction:column; }
-    .panel-head{ padding:18px 20px; border-bottom:1px solid rgba(255,255,255,.08); display:flex; align-items:center; justify-content:space-between; gap:12px; }
-    .panel-head h3{ margin:0; font-family:'Space Grotesk', sans-serif; font-size:1rem; letter-spacing:.01em; }
-    .panel-head span{ color:var(--soft); font-size:.88rem; }
-    .steps{ padding:14px; display:flex; flex-direction:column; gap:10px; overflow-y:auto; flex:1; }
-    .step{ display:grid; grid-template-columns: 42px 1fr auto; gap:14px; align-items:start; padding:14px; border-radius:18px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); transition:.22s ease; cursor:pointer; }
-    .step:hover{ transform:translateX(3px); border-color:rgba(124,156,255,.25); background:rgba(124,156,255,.06); }
-    .step.selected{ border-color:var(--accent); background:rgba(124,156,255,.1); }
-    .step.running{ border-left:4px solid var(--warning); }
-    .step.passed{ border-left:4px solid var(--accent-2); }
-    .step.failed{ border-left:4px solid var(--danger); }
-    .step-index{ width:42px;height:42px; border-radius:14px; display:grid; place-items:center; font-family:'Space Grotesk', sans-serif; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.08); color:#d9e3ff; flex-shrink:0; }
-    .step-content h4{ margin:2px 0 4px; font-size:.98rem; }
-    .step-content p{ margin:0; color:var(--soft); font-size:.9rem; line-height:1.45; }
-    .tag{ font-size:.75rem; color:#c7d2f7; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.03); padding:7px 10px; border-radius:999px; white-space:nowrap; }
-    .tag.click{ color:var(--accent); border-color:rgba(124,156,255,.3); }
-    .tag.type{ color:var(--accent-2); border-color:rgba(126,240,201,.3); }
-    .tag.navigate{ color:var(--warning); border-color:rgba(255,211,107,.3); }
-    .canvas{ position:relative; min-height:100%; padding:22px; background: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px); background-size:24px 24px; }
-    .browser{ border:1px solid rgba(255,255,255,.1); background:#0d1017; border-radius:22px; overflow:hidden; min-height:520px; box-shadow:0 24px 50px rgba(0,0,0,.35); }
-    .browser-top{ padding:14px 16px; border-bottom:1px solid rgba(255,255,255,.08); display:flex; align-items:center; gap:14px; background:rgba(255,255,255,.03); }
-    .traffic{ display:flex; gap:8px; }
-    .traffic span{ width:10px;height:10px;border-radius:50%; display:block; }
-    .traffic span:nth-child(1){background:#ff7d8a}
-    .traffic span:nth-child(2){background:#ffd36b}
-    .traffic span:nth-child(3){background:#7ef0c9}
-    .url-bar{ flex:1; border:1px solid rgba(255,255,255,.08); border-radius:999px; padding:9px 14px; color:#b9c4e0; font-size:.88rem; background:rgba(255,255,255,.03); outline:none; }
-    .mock-page{ padding:28px; display:grid; gap:18px; }
-    .inspector{ padding:26px 20px; display:flex; flex-direction:column; gap:18px; overflow-y:auto; }
-    .status{ display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid rgba(255,255,255,.08); border-radius:20px; padding:16px; background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)); }
-    .status strong{ display:block; font-family:'Space Grotesk', sans-serif; font-size:1rem; }
-    .status small{ color:var(--soft); display:block; margin-top:4px; }
-    .pill{ color:#0e1624; background:var(--accent-2); border-radius:999px; padding:8px 12px; font-weight:700; font-size:.8rem; }
-    .pill.recording{ background:var(--danger); color:#fff; }
-    .form-block{ border:1px solid rgba(255,255,255,.08); border-radius:20px; padding:16px; background:rgba(255,255,255,.025); }
-    .form-block h3{ margin:0 0 14px; font-family:'Space Grotesk', sans-serif; font-size:1rem; }
-    .meta{ display:grid; gap:12px; }
-    .meta label{ display:grid; gap:7px; color:#dce5ff; font-size:.9rem; }
-    .input, .textarea, .select{ width:100%; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.04); color:var(--text); border-radius:14px; padding:12px 13px; font:inherit; outline:none; transition:.2s ease; }
-    .input:focus, .textarea:focus, .select:focus{ border-color:rgba(124,156,255,.45); box-shadow:0 0 0 4px rgba(124,156,255,.12); }
-    .textarea{ min-height:92px; resize:vertical; }
-    .inline-actions{ display:flex; gap:10px; margin-top:14px; }
-    .ghost-btn{ background:rgba(255,255,255,.05); color:var(--text); border:1px solid rgba(255,255,255,.08); flex:1; }
-    .ghost-btn:hover{ transform:translateY(-2px); background:rgba(255,255,255,.08); }
-    .timeline{ display:grid; gap:10px; max-height:200px; overflow-y:auto; }
-    .event{ display:grid; grid-template-columns:14px 1fr; gap:12px; align-items:start; }
-    .event .pin{ width:14px;height:14px;border-radius:50%; background:var(--accent); margin-top:4px; box-shadow:0 0 0 6px rgba(124,156,255,.12); }
-    .event p{ margin:0; color:var(--soft); line-height:1.45; font-size:.9rem; }
-    .event strong{ color:var(--text); display:block; margin-bottom:4px; }
-    @media (max-width: 1180px){ .app{ grid-template-columns: 240px 1fr; } .inspector{ grid-column:1/-1; } }
-    @media (max-width: 860px){ .app{ grid-template-columns:1fr; } .workspace{ grid-template-columns:1fr; } }
-    .hidden{display:none}
-    .prebuilt-actions select{ background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); color:var(--text); border-radius:14px; padding:10px; }
-  </style>
-</head>
-<body>
-<div class="app">
-  <aside class="sidebar">
-    <div class="brand">
-      <div class="brand-mark"></div>
-      <div><h1>Adhy Studio</h1><p>Visual Recorder · Phase 6</p></div>
-    </div>
-    <nav class="nav-group">
-      <div class="nav-title">Workspace</div>
-      <button class="nav-btn active" id="navRecorder"><span class="left"><span class="icon"></span> Recorder</span><span id="stepCountBadge">0</span></button>
-      <button class="nav-btn" id="navTestCases"><span class="left"><span class="icon"></span> Test Cases</span></button>
-    </nav>
-    <nav class="nav-group">
-      <div class="nav-title">Device</div>
-      <select id="deviceSelect" class="select" style="margin-bottom:8px;">
-        <option value="Desktop">🖥 Desktop</option>
-        <option value="iPhone 13">📱 iPhone 13</option>
-        <option value="Pixel 5">📱 Pixel 5</option>
-        <option value="Galaxy S9">📱 Galaxy S9</option>
-        <option value="iPad">📟 iPad</option>
-      </select>
-    </nav>
-    <nav class="nav-group">
-      <div class="nav-title">Prebuilt Actions</div>
-      <select id="prebuiltSelect" class="select">
-        <option value="">-- Choose template --</option>
-        <option value="login">Login Form</option>
-        <option value="search">Search</option>
-        <option value="form">Contact Form</option>
-      </select>
-      <button id="applyPrebuilt" class="ghost-btn" style="margin-top:6px;">Apply</button>
-    </nav>
-    <section class="projects">
-      <h3>Current Session</h3>
-      <p id="sessionInfo">Connect to start</p>
-      <button class="primary-btn" id="connectBtn">🔌 Connect Backend</button>
-    </section>
-  </aside>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Adhy Studio</title>
 
-  <main class="main">
-    <header class="topbar">
-      <div class="page-title">
-        <h2>Visual Step Editor</h2>
-        <p>Record, edit, and run tests with live browser preview.</p>
-      </div>
-      <div class="toolbar">
-        <button class="tool-btn record" id="recordBtn"><span class="dot" style="color:var(--danger)"></span> Start Recording</button>
-        <button class="tool-btn stop" id="stopBtn"><span class="dot" style="color:var(--warning)"></span> Stop</button>
-        <button class="tool-btn run" id="runBtn"><span class="dot" style="color:var(--accent-2)"></span> Run Test</button>
-        <button class="tool-btn" id="exportBtn">📤 Export Code</button>
-      </div>
-    </header>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-    <section class="workspace">
-      <section class="panel" aria-labelledby="steps-title">
-        <div class="panel-head">
-          <h3 id="steps-title">Recorded Steps</h3>
-          <span id="stepCounter">0 actions</span>
-        </div>
-        <div id="stepsContainer" class="steps">
-          <div style="color:var(--soft);text-align:center;padding:40px;">No steps yet. Click Record or use Prebuilt Actions.</div>
-        </div>
-        <div style="padding:10px; border-top:1px solid rgba(255,255,255,.08); display:flex; gap:8px;">
-          <button class="ghost-btn" id="clearStepsBtn">Clear All</button>
-          <button class="ghost-btn" id="deduplicateBtn">🧹 Deduplicate</button>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <h3>Browser Preview</h3>
-          <span id="browserStatus">not connected</span>
-        </div>
-        <div class="canvas">
-          <div class="browser">
-            <div class="browser-top">
-              <div class="traffic"><span></span><span></span><span></span></div>
-              <input type="text" id="urlInput" class="url-bar" value="https://example.com" placeholder="Enter URL" />
-              <button class="tool-btn" id="navigateBtn" style="padding:6px 12px;">Go</button>
-            </div>
-            <div style="position:relative; min-height:420px; background:rgba(0,0,0,0.2);" id="previewPlaceholder">
-              <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:var(--soft); text-align:center;">
-                <div style="font-size:3rem; margin-bottom:8px;">🌐</div>
-                <div>Connect and navigate to see live preview</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    </section>
-  </main>
-
-  <aside class="inspector">
-    <section class="status">
-      <div><strong>Recorder Status</strong><small id="statusMessage">Disconnected</small></div>
-      <div class="pill" id="statusPill">IDLE</div>
-    </section>
-
-    <section class="form-block" id="stepEditor" style="display:none;">
-      <h3>Edit Step</h3>
-      <div class="meta">
-        <label>Command
-          <select id="editAction" class="select">
-            <option value="click">click</option>
-            <option value="type">type</option>
-            <option value="navigate">navigate</option>
-            <option value="hover">hover</option>
-            <option value="select">select</option>
-            <option value="check">check</option>
-            <option value="assertVisible">assert visible</option>
-            <option value="assertText">assert text</option>
-            <option value="assertValue">assert value</option>
-            <option value="wait">wait (ms)</option>
-          </select>
-        </label>
-        <label>Selector
-          <input class="input" id="editSelector" type="text" />
-        </label>
-        <label>Value
-          <input class="input" id="editValue" type="text" />
-        </label>
-      </div>
-      <div class="inline-actions">
-        <button class="ghost-btn" id="deleteStepBtn">Delete</button>
-        <button class="primary-btn" id="saveStepBtn">Save Step</button>
-        <button class="ghost-btn" id="highlightStepBtn">🔍 Highlight</button>
-      </div>
-    </section>
-
-    <section class="form-block">
-      <h3>Execution Timeline</h3>
-      <div id="timelineContainer" class="timeline">
-        <div class="event"><div class="pin"></div><p><strong>--:--:--</strong> Ready</p></div>
-      </div>
-    </section>
-
-    <section class="form-block" id="loopPanel" style="display:none;">
-      <h3>Loop Runner</h3>
-      <div class="meta">
-        <label>Count <input class="input" id="loopCount" type="number" value="5" /></label>
-        <label>Delay (ms) <input class="input" id="loopDelay" type="number" value="500" /></label>
-        <label><input type="checkbox" id="stopOnFail" /> Stop on failure</label>
-      </div>
-      <button class="primary-btn" id="startLoopBtn">Run Loop</button>
-    </section>
-  </aside>
-</div>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<style>
+
+:root{
+ --bg:#0f1116;
+ --panel:#171a22;
+ --panel2:#1c2130;
+ --line:#2f374f;
+ --text:#edf2ff;
+ --soft:#90a0bf;
+ --accent:#7c9cff;
+ --accent2:#7ef0c9;
+ --danger:#ff7d8a;
+ --warning:#ffd36b;
+ --radius:18px;
+ --shadow:0 20px 60px rgba(0,0,0,.35);
+}
+
+*{
+ box-sizing:border-box;
+}
+
+body{
+ margin:0;
+ background:linear-gradient(180deg,#0b0d12,#11151d);
+ color:var(--text);
+ font-family:'IBM Plex Sans',sans-serif;
+ overflow:hidden;
+}
+
+.app{
+ display:grid;
+ grid-template-columns:260px 1fr 360px;
+ height:100vh;
+}
+
+.sidebar,
+.main,
+.inspector{
+ background:rgba(15,18,25,.92);
+ border-right:1px solid rgba(255,255,255,.05);
+}
+
+.sidebar{
+ padding:20px;
+ overflow:auto;
+}
+
+.brand{
+ display:flex;
+ align-items:center;
+ gap:12px;
+ margin-bottom:28px;
+}
+
+.logo{
+ width:42px;
+ height:42px;
+ border-radius:14px;
+ background:linear-gradient(135deg,var(--accent),var(--accent2));
+}
+
+.brand h1{
+ margin:0;
+ font-size:1rem;
+ font-family:'Space Grotesk';
+}
+
+.brand p{
+ margin:2px 0 0;
+ color:var(--soft);
+ font-size:.8rem;
+}
+
+.accordion{
+ margin-bottom:18px;
+}
+
+.acc-header{
+ display:flex;
+ justify-content:space-between;
+ align-items:center;
+ cursor:pointer;
+ padding:12px 14px;
+ border-radius:14px;
+ background:rgba(255,255,255,.03);
+}
+
+.acc-body{
+ padding-top:10px;
+ display:block;
+}
+
+.nav-btn{
+ width:100%;
+ border:none;
+ background:transparent;
+ color:var(--text);
+ display:flex;
+ align-items:center;
+ gap:12px;
+ padding:12px;
+ border-radius:12px;
+ cursor:pointer;
+ margin-bottom:6px;
+ font-size:.95rem;
+}
+
+.nav-btn:hover{
+ background:rgba(255,255,255,.05);
+}
+
+.nav-btn.active{
+ background:rgba(124,156,255,.12);
+ border:1px solid rgba(124,156,255,.2);
+}
+
+.main{
+ display:flex;
+ flex-direction:column;
+ overflow:hidden;
+}
+
+.topbar{
+ padding:18px 22px;
+ border-bottom:1px solid rgba(255,255,255,.05);
+ display:flex;
+ justify-content:space-between;
+ align-items:center;
+}
+
+.toolbar{
+ display:flex;
+ gap:10px;
+ align-items:center;
+}
+
+.btn{
+ border:none;
+ padding:11px 16px;
+ border-radius:14px;
+ color:white;
+ cursor:pointer;
+ font-weight:600;
+ background:rgba(255,255,255,.06);
+}
+
+.btn:hover{
+ transform:translateY(-2px);
+}
+
+.btn.record{
+ background:linear-gradient(135deg,var(--danger),#ff96a1);
+}
+
+.btn.run{
+ background:linear-gradient(135deg,var(--accent2),#a7ffe0);
+ color:#08110f;
+}
+
+.workspace{
+ flex:1;
+ display:grid;
+ grid-template-columns:1fr 1fr;
+ gap:18px;
+ padding:18px;
+ overflow:hidden;
+}
+
+.panel{
+ background:rgba(255,255,255,.03);
+ border:1px solid rgba(255,255,255,.06);
+ border-radius:22px;
+ overflow:hidden;
+ display:flex;
+ flex-direction:column;
+}
+
+.panel-head{
+ padding:16px 18px;
+ border-bottom:1px solid rgba(255,255,255,.06);
+ display:flex;
+ justify-content:space-between;
+ align-items:center;
+}
+
+.panel-body{
+ flex:1;
+ overflow:auto;
+}
+
+.steps{
+ padding:12px;
+ display:flex;
+ flex-direction:column;
+ gap:10px;
+}
+
+.step{
+ display:grid;
+ grid-template-columns:42px 1fr auto;
+ gap:12px;
+ padding:14px;
+ border-radius:16px;
+ background:rgba(255,255,255,.03);
+ cursor:pointer;
+ border:1px solid transparent;
+}
+
+.step:hover{
+ border-color:rgba(124,156,255,.25);
+ background:rgba(124,156,255,.08);
+}
+
+.step.selected{
+ border-color:var(--accent);
+}
+
+.step-number{
+ width:42px;
+ height:42px;
+ border-radius:12px;
+ background:rgba(255,255,255,.05);
+ display:flex;
+ align-items:center;
+ justify-content:center;
+ font-weight:700;
+}
+
+.step h4{
+ margin:0;
+}
+
+.step p{
+ margin:4px 0 0;
+ color:var(--soft);
+ font-size:.85rem;
+}
+
+.tag{
+ padding:6px 10px;
+ border-radius:999px;
+ background:rgba(255,255,255,.05);
+ font-size:.72rem;
+}
+
+.browser{
+ height:100%;
+ display:flex;
+ flex-direction:column;
+}
+
+.browser-top{
+ padding:14px;
+ border-bottom:1px solid rgba(255,255,255,.05);
+ display:flex;
+ gap:10px;
+ align-items:center;
+}
+
+.url{
+ flex:1;
+ padding:10px 14px;
+ border-radius:999px;
+ border:none;
+ background:rgba(255,255,255,.05);
+ color:white;
+}
+
+.preview{
+ flex:1;
+ position:relative;
+ background:#0a0d14;
+}
+
+.preview img{
+ width:100%;
+ height:100%;
+ object-fit:cover;
+}
+
+.empty{
+ position:absolute;
+ top:50%;
+ left:50%;
+ transform:translate(-50%,-50%);
+ text-align:center;
+ color:var(--soft);
+}
+
+.inspector{
+ padding:18px;
+ overflow:auto;
+}
+
+.status{
+ display:flex;
+ justify-content:space-between;
+ align-items:center;
+ padding:16px;
+ border-radius:18px;
+ background:rgba(255,255,255,.04);
+ margin-bottom:18px;
+}
+
+.pill{
+ padding:8px 14px;
+ border-radius:999px;
+ background:var(--accent2);
+ color:#08110f;
+ font-weight:700;
+}
+
+.form-block{
+ background:rgba(255,255,255,.03);
+ border:1px solid rgba(255,255,255,.06);
+ border-radius:18px;
+ padding:16px;
+ margin-bottom:18px;
+}
+
+.form-block h3{
+ margin-top:0;
+}
+
+.input,
+.select{
+ width:100%;
+ padding:12px;
+ margin-top:8px;
+ margin-bottom:14px;
+ border:none;
+ border-radius:12px;
+ background:rgba(255,255,255,.05);
+ color:white;
+}
+
+.timeline{
+ display:flex;
+ flex-direction:column;
+ gap:12px;
+}
+
+.event{
+ padding:12px;
+ border-radius:12px;
+ background:rgba(255,255,255,.04);
+ font-size:.85rem;
+ color:var(--soft);
+}
+
+.logs{
+ max-height:220px;
+ overflow:auto;
+}
+
+.log{
+ padding:10px;
+ border-radius:10px;
+ margin-bottom:8px;
+ background:rgba(255,255,255,.04);
+ font-size:.82rem;
+}
+
+.pass{
+ border-left:4px solid var(--accent2);
+}
+
+.fail{
+ border-left:4px solid var(--danger);
+}
+
+@media(max-width:1200px){
+ .app{
+  grid-template-columns:220px 1fr;
+ }
+
+ .inspector{
+  display:none;
+ }
+}
+
+@media(max-width:900px){
+ .app{
+  grid-template-columns:1fr;
+ }
+
+ .sidebar{
+  display:none;
+ }
+
+ .workspace{
+  grid-template-columns:1fr;
+ }
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="app">
+
+<!-- SIDEBAR -->
+
+<aside class="sidebar">
+
+<div class="brand">
+<div class="logo"></div>
+<div>
+<h1>Adhy Studio</h1>
+<p>AI Automation IDE</p>
+</div>
+</div>
+
+<div class="accordion">
+
+<div class="acc-header">
+<span>Workspace</span>
+<i data-lucide="chevron-down"></i>
+</div>
+
+<div class="acc-body">
+
+<button class="nav-btn active">
+<i data-lucide="radio"></i>
+Recorder
+</button>
+
+<button class="nav-btn">
+<i data-lucide="layout-dashboard"></i>
+Dashboard
+</button>
+
+<button class="nav-btn">
+<i data-lucide="network"></i>
+API Logs
+</button>
+
+<button class="nav-btn">
+<i data-lucide="file-code"></i>
+Export
+</button>
+
+</div>
+</div>
+
+<div class="accordion">
+
+<div class="acc-header">
+<span>Configuration</span>
+<i data-lucide="chevron-down"></i>
+</div>
+
+<div class="acc-body">
+
+<select class="select" id="deviceSelect">
+<option>Desktop</option>
+<option>iPhone 13</option>
+<option>Pixel 5</option>
+</select>
+
+<label style="display:flex;gap:10px;align-items:center;margin-top:10px;">
+<input type="checkbox" id="sfMode"/>
+Salesforce Mode
+</label>
+
+</div>
+</div>
+
+</aside>
+
+<!-- MAIN -->
+
+<main class="main">
+
+<div class="topbar">
+
+<div>
+<h2 style="margin:0;font-family:'Space Grotesk'">Visual Recorder</h2>
+<p style="margin:4px 0 0;color:var(--soft)">Record, replay and export automation flows.</p>
+</div>
+
+<div class="toolbar">
+
+<button class="btn record" id="recordBtn">
+🎙 Start Recording
+</button>
+
+<button class="btn run" id="runBtn">
+▶ Run Test
+</button>
+
+<select class="select" id="exportType" style="width:180px;margin:0;">
+<option>Playwright JS</option>
+<option>Selenium Java</option>
+<option>Cucumber Java</option>
+<option>Playwright TS</option>
+</select>
+
+<button class="btn" id="exportBtn">
+📤 Export
+</button>
+
+</div>
+
+</div>
+
+<div class="workspace">
+
+<!-- STEPS -->
+
+<section class="panel">
+
+<div class="panel-head">
+<h3>Recorded Steps</h3>
+<span id="stepCount">0 actions</span>
+</div>
+
+<div class="panel-body">
+
+<div class="steps" id="stepsContainer">
+
+<div class="empty">
+<h3>No steps yet</h3>
+<p>Start recording to capture actions.</p>
+</div>
+
+</div>
+
+</div>
+
+</section>
+
+<!-- BROWSER -->
+
+<section class="panel">
+
+<div class="panel-head">
+<h3>Live Browser Preview</h3>
+<span id="browserStatus">Disconnected</span>
+</div>
+
+<div class="browser">
+
+<div class="browser-top">
+
+<input
+class="url"
+id="urlInput"
+value="https://example.com"
+/>
+
+<button class="btn" id="goBtn">
+Go
+</button>
+
+</div>
+
+<div class="preview">
+
+<img id="previewImg" style="display:none"/>
+
+<div class="empty" id="previewEmpty">
+<div style="font-size:3rem">🌐</div>
+<div>Browser preview will appear here</div>
+</div>
+
+</div>
+
+</div>
+
+</section>
+
+</div>
+
+</main>
+
+<!-- INSPECTOR -->
+
+<aside class="inspector">
+
+<div class="status">
+
+<div>
+<strong>Recorder Status</strong>
+<div style="color:var(--soft);margin-top:4px" id="statusText">
+Disconnected
+</div>
+</div>
+
+<div class="pill" id="statusPill">
+IDLE
+</div>
+
+</div>
+
+<div class="form-block">
+
+<h3>Step Editor</h3>
+
+<label>Action</label>
+
+<select class="select" id="editAction">
+<option>click</option>
+<option>type</option>
+<option>navigate</option>
+<option>assertText</option>
+<option>assertVisible</option>
+</select>
+
+<label>Locator Strategy</label>
+
+<select class="select" id="locatorType">
+<option>css</option>
+<option>xpath</option>
+<option>aria</option>
+<option>id</option>
+</select>
+
+<label>Selector</label>
+
+<input class="input" id="editSelector"/>
+
+<label>Value</label>
+
+<input class="input" id="editValue"/>
+
+<div style="display:flex;gap:10px;margin-top:12px">
+
+<button class="btn" style="flex:1">
+💾 Save
+</button>
+
+<button class="btn" style="flex:1">
+🗑 Delete
+</button>
+
+</div>
+
+</div>
+
+<div class="form-block">
+
+<h3>Execution Timeline</h3>
+
+<div class="timeline" id="timeline">
+
+<div class="event">
+Ready for execution
+</div>
+
+</div>
+
+</div>
+
+<div class="form-block">
+
+<h3>API Logs</h3>
+
+<div class="logs" id="apiLogs">
+
+<div class="log">
+GET /api/status 200
+</div>
+
+</div>
+
+</div>
+
+</aside>
+
+</div>
+
 <script>
-const API = 'http://localhost:3000';
-let socket;
-let steps = [];
-let isRecording = false;
-let selectedStepIndex = -1;
-let runStatuses = {};
 
-const Adhy = {
-  init() {
-    this.bindEvents();
-  },
-  bindEvents() {
-    document.getElementById('connectBtn').addEventListener('click', () => this.connect());
-    document.getElementById('navigateBtn').addEventListener('click', () => this.navigate());
-    document.getElementById('recordBtn').addEventListener('click', () => this.toggleRecording());
-    document.getElementById('stopBtn').addEventListener('click', () => this.stopRecording());
-    document.getElementById('runBtn').addEventListener('click', () => this.runTest());
-    document.getElementById('exportBtn').addEventListener('click', () => this.exportCode());
-    document.getElementById('clearStepsBtn').addEventListener('click', () => this.clearSteps());
-    document.getElementById('deduplicateBtn').addEventListener('click', () => this.deduplicateSteps());
-    document.getElementById('saveStepBtn').addEventListener('click', () => this.saveStep());
-    document.getElementById('deleteStepBtn').addEventListener('click', () => this.deleteStep());
-    document.getElementById('highlightStepBtn').addEventListener('click', () => this.highlightStep());
-    document.getElementById('applyPrebuilt').addEventListener('click', () => this.applyPrebuilt());
-    document.getElementById('startLoopBtn').addEventListener('click', () => this.startLoop());
-  },
+lucide.createIcons();
 
-  async connect() {
-    try {
-      const res = await fetch(`${API}/api/status`);
-      const data = await res.json();
-      document.getElementById('sessionInfo').innerHTML = `Backend: ${data.phase || 'online'}<br>Browser: ${data.browserOpen ? 'open' : 'closed'}`;
-      document.getElementById('statusMessage').textContent = 'Connected';
-      document.getElementById('statusPill').textContent = 'CONNECTED';
-      document.getElementById('statusPill').style.background = 'var(--accent-2)';
-      
-      // Init browser + WebSocket
-      await fetch(`${API}/api/init`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device: document.getElementById('deviceSelect').value, url: document.getElementById('urlInput').value }) });
-      
-      socket = io(API);
-      socket.on('steps:update', (data) => {
-        steps = data.steps || [];
-        this.renderSteps();
-      });
-      socket.on('step:status', (data) => {
-        runStatuses[data.index] = data.status;
-        this.renderSteps();
-      });
-      socket.on('run:completed', (run) => {
-        this.addTimeline(`Run ${run.status} (${run.duration}ms)`);
-      });
-      socket.on('timeline:new', (event) => {
-        this.addTimeline(`${event.type}: ${JSON.stringify(event).slice(0,60)}`);
-      });
-      socket.on('loop:iteration', (data) => {
-        this.addTimeline(`Loop ${data.current}/${data.total}`);
-      });
-      this.addTimeline('Connected to backend');
-    } catch(e) {
-      document.getElementById('statusMessage').textContent = 'Failed to connect';
-      document.getElementById('statusPill').textContent = 'ERROR';
-      document.getElementById('statusPill').style.background = 'var(--danger)';
-    }
-  },
+const API = "http://localhost:3000";
 
-  async navigate() {
-    const url = document.getElementById('urlInput').value;
-    if (!url) return;
-    await fetch(`${API}/api/navigate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
-    this.addTimeline(`Navigated to ${url}`);
-  },
-
-  async toggleRecording() {
-    if (!isRecording) {
-      await fetch(`${API}/api/record/start`, { method: 'POST' });
-      isRecording = true;
-      document.getElementById('recordBtn').innerHTML = '<span class="dot" style="color:var(--accent-2)"></span> Recording...';
-      document.getElementById('recordBtn').classList.add('recording');
-      document.getElementById('statusPill').textContent = 'REC';
-      document.getElementById('statusPill').classList.add('recording');
-    } else {
-      await this.stopRecording();
-    }
-  },
-
-  async stopRecording() {
-    if (!isRecording) return;
-    const res = await fetch(`${API}/api/record/stop`, { method: 'POST' });
-    const data = await res.json();
-    steps = data.steps || [];
-    isRecording = false;
-    document.getElementById('recordBtn').innerHTML = '<span class="dot" style="color:var(--danger)"></span> Start Recording';
-    document.getElementById('recordBtn').classList.remove('recording');
-    document.getElementById('statusPill').textContent = 'IDLE';
-    document.getElementById('statusPill').classList.remove('recording');
-    this.renderSteps();
-  },
-
-  async runTest() {
-    await fetch(`${API}/api/run`, { method: 'POST' });
-    this.addTimeline('Test execution started');
-  },
-
-  async exportCode() {
-    const res = await fetch(`${API}/api/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ language: 'javascript' }) });
-    const data = await res.json();
-    const blob = new Blob([data.code], { type: 'text/plain' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'adhy-test.spec.js';
-    a.click();
-  },
-
-  clearSteps() {
-    steps = [];
-    fetch(`${API}/api/record/start`, { method: 'POST' }).then(() => fetch(`${API}/api/record/stop`, { method: 'POST' }));
-    this.renderSteps();
-  },
-
-  deduplicateSteps() {
-    const seen = new Set();
-    const unique = [];
-    steps.forEach(s => {
-      const key = `${s.action}|${s.selector}|${s.value}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push(s);
-      }
-    });
-    steps = unique;
-    this.renderSteps();
-    this.addTimeline('Duplicates removed');
-  },
-
-  renderSteps() {
-    const container = document.getElementById('stepsContainer');
-    const counter = document.getElementById('stepCounter');
-    if (!container) return;
-    if (steps.length === 0) {
-      container.innerHTML = '<div style="color:var(--soft);text-align:center;padding:40px;">No steps yet.</div>';
-      counter.textContent = '0 actions';
-      document.getElementById('stepCountBadge').textContent = '0';
-      return;
-    }
-    counter.textContent = `${steps.length} actions`;
-    document.getElementById('stepCountBadge').textContent = steps.length;
-    let html = '';
-    steps.forEach((s, i) => {
-      const status = runStatuses[i] || '';
-      const tagClass = s.action === 'type' ? 'type' : (s.action === 'navigate' ? 'navigate' : 'click');
-      html += `<div class="step ${status} ${i === selectedStepIndex ? 'selected' : ''}" data-index="${i}" onclick="Adhy.selectStep(${i})">
-        <div class="step-index">${String(i+1).padStart(2,'0')}</div>
-        <div class="step-content">
-          <h4>${s.action}</h4>
-          <p>${s.selector} ${s.value ? '→ ' + s.value : ''}</p>
-        </div>
-        <div class="tag ${tagClass}">${s.action}</div>
-      </div>`;
-    });
-    container.innerHTML = html;
-  },
-
-  selectStep(index) {
-    selectedStepIndex = index;
-    this.renderSteps();
-    const step = steps[index];
-    if (!step) return;
-    document.getElementById('stepEditor').style.display = 'block';
-    document.getElementById('editAction').value = step.action || 'click';
-    document.getElementById('editSelector').value = step.selector || '';
-    document.getElementById('editValue').value = step.value || '';
-  },
-
-  async saveStep() {
-    if (selectedStepIndex < 0 || selectedStepIndex >= steps.length) return;
-    const updated = {
-      action: document.getElementById('editAction').value,
-      selector: document.getElementById('editSelector').value,
-      value: document.getElementById('editValue').value
-    };
-    steps[selectedStepIndex] = updated;
-    await fetch(`${API}/api/steps/update`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index: selectedStepIndex, ...updated }) });
-    this.renderSteps();
-  },
-
-  deleteStep() {
-    if (selectedStepIndex < 0) return;
-    steps.splice(selectedStepIndex, 1);
-    selectedStepIndex = -1;
-    document.getElementById('stepEditor').style.display = 'none';
-    this.renderSteps();
-  },
-
-  async highlightStep() {
-    if (selectedStepIndex < 0) return;
-    const sel = steps[selectedStepIndex].selector;
-    // Send request to backend to highlight element (if we add that endpoint)
-    // For now, just show the selector
-    this.addTimeline(`Highlight: ${sel}`);
-  },
-
-  applyPrebuilt() {
-    const template = document.getElementById('prebuiltSelect').value;
-    const templates = {
-      login: [
-        { action: 'navigate', selector: 'https://example.com/login', value: '' },
-        { action: 'type', selector: '#username', value: '{{username}}' },
-        { action: 'type', selector: '#password', value: '{{password}}' },
-        { action: 'click', selector: '#loginBtn', value: '' },
-        { action: 'assertVisible', selector: '.dashboard', value: '' }
-      ],
-      search: [
-        { action: 'navigate', selector: 'https://example.com', value: '' },
-        { action: 'type', selector: '#searchBox', value: '{{searchTerm}}' },
-        { action: 'click', selector: '#searchBtn', value: '' }
-      ],
-      form: [
-        { action: 'type', selector: '#name', value: 'John Doe' },
-        { action: 'type', selector: '#email', value: 'john@example.com' },
-        { action: 'click', selector: '#submitBtn', value: '' }
-      ]
-    };
-    if (templates[template]) {
-      steps = [...steps, ...templates[template]];
-      this.renderSteps();
-      this.addTimeline(`Applied template: ${template}`);
-    }
-  },
-
-  async startLoop() {
-    const count = parseInt(document.getElementById('loopCount').value) || 5;
-    const delay = parseInt(document.getElementById('loopDelay').value) || 500;
-    const stopOnFail = document.getElementById('stopOnFail').checked;
-    await fetch(`${API}/api/run/loop`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ count, delay, stopOnFailure: stopOnFail })
-    });
-  },
-
-  addTimeline(msg) {
-    const container = document.getElementById('timelineContainer');
-    const time = new Date().toLocaleTimeString();
-    container.innerHTML += `<div class="event"><div class="pin"></div><p><strong>${time}</strong> ${msg}</p></div>`;
-    container.scrollTop = container.scrollHeight;
-  }
+const Store = {
+ steps: [],
+ selectedStep: null,
+ apiLogs: [],
+ recording: false
 };
 
-document.addEventListener('DOMContentLoaded', () => Adhy.init());
+let socket;
+
+const previewImg = document.getElementById('previewImg');
+
+async function connectBackend(){
+
+ try{
+
+  await fetch(`${API}/api/status`);
+
+  socket = io(API);
+
+  document.getElementById('statusText').innerText = "Connected";
+  document.getElementById('browserStatus').innerText = "Connected";
+
+  socket.on('steps:update', data=>{
+    Store.steps = data.steps || [];
+    renderSteps();
+  });
+
+  socket.on('api:log', log=>{
+    addApiLog(log);
+  });
+
+  socket.on('timeline:new', e=>{
+    addTimeline(e.type);
+  });
+
+ }catch(e){
+
+  document.getElementById('statusText').innerText = "Connection failed";
+
+ }
+
+}
+
+async function toggleRecording(){
+
+ if(!socket){
+   await connectBackend();
+ }
+
+ if(!Store.recording){
+
+   await fetch(`${API}/api/init`,{
+     method:'POST',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({
+       url:document.getElementById('urlInput').value,
+       device:document.getElementById('deviceSelect').value
+     })
+   });
+
+   await fetch(`${API}/api/record/start`,{
+     method:'POST'
+   });
+
+   Store.recording = true;
+
+   updateRecordingUI(true);
+
+   startPreview();
+
+ }else{
+
+   await fetch(`${API}/api/record/stop`,{
+     method:'POST'
+   });
+
+   Store.recording = false;
+
+   updateRecordingUI(false);
+
+ }
+
+}
+
+function updateRecordingUI(recording){
+
+ const btn = document.getElementById('recordBtn');
+
+ if(recording){
+
+   btn.innerHTML = "⏹ Stop Recording";
+   document.getElementById('statusPill').innerText = "REC";
+   document.getElementById('statusPill').style.background = "var(--danger)";
+
+ }else{
+
+   btn.innerHTML = "🎙 Start Recording";
+   document.getElementById('statusPill').innerText = "IDLE";
+   document.getElementById('statusPill').style.background = "var(--accent2)";
+
+ }
+
+}
+
+async function runTest(){
+
+ addTimeline("Execution started");
+
+ await fetch(`${API}/api/run`,{
+   method:'POST'
+ });
+
+}
+
+function renderSteps(){
+
+ const container = document.getElementById('stepsContainer');
+
+ document.getElementById('stepCount').innerText =
+   `${Store.steps.length} actions`;
+
+ if(Store.steps.length === 0){
+
+   container.innerHTML = `
+   <div class="empty">
+      <h3>No steps yet</h3>
+   </div>
+   `;
+
+   return;
+ }
+
+ let html = "";
+
+ Store.steps.forEach((s,i)=>{
+
+   html += `
+   <div class="step" onclick="selectStep(${i})">
+
+      <div class="step-number">
+         ${String(i+1).padStart(2,'0')}
+      </div>
+
+      <div>
+        <h4>${s.action}</h4>
+        <p>${s.selector || ''}</p>
+      </div>
+
+      <div class="tag">
+        ${s.action}
+      </div>
+
+   </div>
+   `;
+
+ });
+
+ container.innerHTML = html;
+
+}
+
+function selectStep(i){
+
+ Store.selectedStep = i;
+
+ const step = Store.steps[i];
+
+ document.getElementById('editAction').value =
+   step.action || '';
+
+ document.getElementById('editSelector').value =
+   step.selector || '';
+
+ document.getElementById('editValue').value =
+   step.value || '';
+
+}
+
+function addTimeline(text){
+
+ const el = document.createElement('div');
+
+ el.className = "event";
+
+ el.innerHTML = `
+ ${new Date().toLocaleTimeString()}<br>
+ ${text}
+ `;
+
+ document.getElementById('timeline').prepend(el);
+
+}
+
+function addApiLog(log){
+
+ const el = document.createElement('div');
+
+ el.className = "log";
+
+ el.innerHTML = `
+ ${log.method} ${log.url}<br>
+ Status: ${log.status}
+ `;
+
+ document.getElementById('apiLogs').prepend(el);
+
+}
+
+async function startPreview(){
+
+ previewImg.style.display = 'block';
+
+ document.getElementById('previewEmpty').style.display='none';
+
+ setInterval(()=>{
+
+   previewImg.src =
+     `${API}/api/preview?t=${Date.now()}`;
+
+ },1000);
+
+}
+
+document.getElementById('recordBtn')
+.addEventListener('click',toggleRecording);
+
+document.getElementById('runBtn')
+.addEventListener('click',runTest);
+
+document.getElementById('goBtn')
+.addEventListener('click',async()=>{
+
+ const url = document.getElementById('urlInput').value;
+
+ await fetch(`${API}/api/navigate`,{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({url})
+ });
+
+});
+
+document.getElementById('exportBtn')
+.addEventListener('click',async()=>{
+
+ const language =
+   document.getElementById('exportType').value;
+
+ const res = await fetch(`${API}/api/generate`,{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({language})
+ });
+
+ const data = await res.json();
+
+ const blob = new Blob([data.code],{
+   type:'text/plain'
+ });
+
+ const a = document.createElement('a');
+
+ a.href = URL.createObjectURL(blob);
+
+ a.download = 'adhy-export.txt';
+
+ a.click();
+
+});
+
 </script>
+
 </body>
 </html>
