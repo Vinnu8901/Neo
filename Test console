@@ -1,0 +1,297 @@
+(async function () {
+
+    console.clear();
+    console.log("🚀 Auto Fill Started");
+
+    // =========================
+    // RANDOM DATA
+    // =========================
+
+    const firstNames = [
+        "Vinodh", "Arun", "Rahul", "David",
+        "John", "Karthik", "Siva", "Ajay"
+    ];
+
+    const lastNames = [
+        "Kumar", "Raj", "Sharma",
+        "Wilson", "Prakash", "Reddy"
+    ];
+
+    const streets = [
+        "Anna Nagar",
+        "MG Road",
+        "Nehru Street",
+        "Gandhi Road"
+    ];
+
+    const cities = [
+        "Chennai",
+        "Mumbai",
+        "Delhi",
+        "Bangalore"
+    ];
+
+    function random(arr) {
+        return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    function randomNumber(len) {
+        return Math.floor(
+            Math.random() * Math.pow(10, len)
+        ).toString().padStart(len, '0');
+    }
+
+    function randomString(len = 6) {
+        return Math.random()
+            .toString(36)
+            .substring(2, 2 + len);
+    }
+
+    // =========================
+    // ACCESS IFRAME
+    // =========================
+
+    const iframe = document.querySelector("iframe");
+
+    if (!iframe) {
+        console.error("❌ iframe not found");
+        return;
+    }
+
+    const doc = iframe.contentWindow.document;
+
+    // =========================
+    // SET VALUE FUNCTION
+    // =========================
+
+    function setValue(element, value) {
+
+        element.scrollIntoView({
+            behavior: "smooth",
+            block: "center"
+        });
+
+        element.focus();
+
+        const setter =
+            Object.getOwnPropertyDescriptor(
+                element.__proto__,
+                'value'
+            ).set;
+
+        setter.call(element, value);
+
+        element.dispatchEvent(
+            new Event('input', {
+                bubbles: true
+            })
+        );
+
+        element.dispatchEvent(
+            new Event('change', {
+                bubbles: true
+            })
+        );
+
+        element.dispatchEvent(
+            new KeyboardEvent('keydown', {
+                bubbles: true
+            })
+        );
+
+        element.dispatchEvent(
+            new KeyboardEvent('keyup', {
+                bubbles: true
+            })
+        );
+
+        element.blur();
+
+        console.log(
+            "✅ Filled:",
+            element.name ||
+            element.id ||
+            element.placeholder,
+            "=>",
+            value
+        );
+    }
+
+    // =========================
+    // GET ALL FIELDS
+    // =========================
+
+    const fields =
+        doc.querySelectorAll(
+            'input, textarea, select'
+        );
+
+    console.log("🔍 Total Fields:", fields.length);
+
+    // =========================
+    // FILL EACH FIELD
+    // =========================
+
+    for (const el of fields) {
+
+        try {
+
+            if (
+                el.disabled ||
+                el.readOnly ||
+                el.offsetParent === null
+            ) {
+                continue;
+            }
+
+            const tag =
+                el.tagName.toLowerCase();
+
+            const type =
+                (el.type || "")
+                .toLowerCase();
+
+            const field =
+                (
+                    el.name ||
+                    el.id ||
+                    el.placeholder ||
+                    ""
+                ).toLowerCase();
+
+            // =====================
+            // INPUTS
+            // =====================
+
+            if (
+                tag === "input" ||
+                tag === "textarea"
+            ) {
+
+                let value =
+                    "Test_" + randomString(5);
+
+                if (
+                    field.includes("first")
+                ) {
+                    value = random(firstNames);
+                }
+
+                else if (
+                    field.includes("last")
+                ) {
+                    value = random(lastNames);
+                }
+
+                else if (
+                    field.includes("middle")
+                ) {
+                    value = "M";
+                }
+
+                else if (
+                    field.includes("email")
+                ) {
+                    value =
+                        randomString(6) +
+                        "@gmail.com";
+                }
+
+                else if (
+                    field.includes("phone") ||
+                    field.includes("mobile")
+                ) {
+                    value =
+                        "9" + randomNumber(9);
+                }
+
+                else if (
+                    field.includes("zip") ||
+                    field.includes("postal")
+                ) {
+                    value =
+                        randomNumber(6);
+                }
+
+                else if (
+                    field.includes("city")
+                ) {
+                    value =
+                        random(cities);
+                }
+
+                else if (
+                    field.includes("address")
+                ) {
+                    value =
+                        randomNumber(3) +
+                        " " +
+                        random(streets);
+                }
+
+                else if (
+                    field.includes("date") ||
+                    field.includes("dob")
+                ) {
+                    value = "01/01/1995";
+                }
+
+                else if (
+                    type === "number"
+                ) {
+                    value = randomNumber(5);
+                }
+
+                setValue(el, value);
+
+                await new Promise(r =>
+                    setTimeout(r, 300)
+                );
+            }
+
+            // =====================
+            // DROPDOWNS
+            // =====================
+
+            else if (tag === "select") {
+
+                const options =
+                    [...el.options]
+                    .filter(o =>
+                        o.value &&
+                        !o.disabled
+                    );
+
+                if (options.length > 0) {
+
+                    const option =
+                        random(options);
+
+                    el.value =
+                        option.value;
+
+                    el.dispatchEvent(
+                        new Event('change', {
+                            bubbles: true
+                        })
+                    );
+
+                    console.log(
+                        "✅ Selected:",
+                        option.text
+                    );
+                }
+            }
+
+        } catch (e) {
+
+            console.error(
+                "❌ Error:",
+                e
+            );
+        }
+    }
+
+    console.log("🎉 All fields updated");
+
+})();
